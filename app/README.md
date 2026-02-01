@@ -160,7 +160,7 @@ app/
 Ezequiel Bellino
 Backend / Fullstack Developer
 Argentina
-```text
+
 GitHub: [https://github.com/ezebellino](https://github.com/ezebellino)
+
 Portfolio: [https://zeqebellino.com](https://zeqebellino.com)
-```
