@@ -2,13 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 from app.db.session import get_db
 from app.api.routes.auth import oauth2_scheme
 from app.core.security import decode_token
 from app.models.booking import Booking
 from app.models.timeslot import TimeSlot
-from app.schemas.booking import BookingCreate, BookingPublic
-from datetime import datetime
+from app.models.court import Court
+from app.schemas.booking import BookingCreate, BookingDetailPublic, BookingPublic
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/bookings", tags=["bookings"]) 
 
@@ -37,8 +39,8 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
         user_id=user_id,
         timeslot_id=ts.id,
         status="confirmed",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
     db.add(b)
     try:
@@ -50,9 +52,19 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
     db.refresh(b)
     return b
 
-@router.get("", response_model=list[BookingPublic])
+@router.get("", response_model=list[BookingDetailPublic])
 def list_bookings(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     bookings = db.execute(
-        select(Booking).where(Booking.user_id == user_id)
+        select(Booking)
+        .options(
+            joinedload(Booking.timeslot)
+            .joinedload(TimeSlot.court)
+            .joinedload(Court.venue),
+            joinedload(Booking.timeslot)
+            .joinedload(TimeSlot.court)
+            .joinedload(Court.sport),
+        )
+        .where(Booking.user_id == user_id)
+        .order_by(Booking.created_at.desc())
     ).scalars().all()
     return bookings

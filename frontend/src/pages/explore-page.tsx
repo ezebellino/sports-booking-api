@@ -1,6 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calendar1, CircleDollarSign, MapPin, Trees, Trophy } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  Calendar1,
+  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  MapPin,
+  MoveRight,
+  ShieldAlert,
+  Trees,
+  Trophy,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
 import { EmptyState } from "../components/empty-state";
@@ -56,10 +68,18 @@ export function ExplorePage() {
     [courtsQuery.data],
   );
 
+  const selectedSport = selectedSportId ? sportsById.get(selectedSportId) ?? null : null;
+  const selectedVenue = selectedVenueId ? venuesById.get(selectedVenueId) ?? null : null;
+  const selectedCourt = selectedCourtId ? courtsById.get(selectedCourtId) ?? null : null;
+
+  useEffect(() => {
+    setFeedback(null);
+  }, [selectedSportId, selectedVenueId, selectedCourtId, selectedDate]);
+
   const bookingMutation = useMutation({
     mutationFn: api.createBooking,
     onSuccess: () => {
-      setFeedback("Reserva confirmada. Ya la podés ver en Mis reservas.");
+      setFeedback("Reserva confirmada. Ya la podÃ©s ver en Mis reservas.");
       void queryClient.invalidateQueries({ queryKey: ["bookings"] });
     },
     onError: (error) => {
@@ -88,6 +108,8 @@ export function ExplorePage() {
     setSearchParams(next);
   }
 
+  const progress = [selectedSport, selectedVenue, selectedCourt].filter(Boolean).length;
+
   return (
     <>
       <AppHeader />
@@ -95,8 +117,8 @@ export function ExplorePage() {
       <section className="space-y-6">
         <SectionTitle
           eyebrow="Explorar"
-          title="Elegí deporte, sede y horario"
-          description="Este flujo orquesta tus recursos actuales para que la reserva se sienta simple en mobile. Empezá por un deporte y el resto de filtros se va acomodando."
+          title="ElegÃ­ deporte, sede y horario"
+          description="El flujo estÃ¡ ordenado para celular: primero el deporte, despuÃ©s la sede, luego la cancha y por Ãºltimo los turnos disponibles para la fecha elegida."
           action={
             <div className="shell-card flex items-center gap-3 px-4 py-3">
               <Calendar1 className="text-skyline" size={18} />
@@ -110,16 +132,48 @@ export function ExplorePage() {
           }
         />
 
+        <div className="shell-card sticky top-3 z-10 border border-slate-200/80 bg-white/95 p-4 backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Progreso de reserva
+              </p>
+              <h3 className="mt-1 text-lg font-bold text-slate-950">
+                {progress}/3 pasos completos antes de ver turnos
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Mantenemos visible tu contexto para que no te pierdas al bajar por la pantalla.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <SelectionBadge label="Deporte" value={selectedSport?.name} onClear={() => updateSelection("sport", null)} />
+              <SelectionBadge label="Sede" value={selectedVenue?.name} onClear={() => updateSelection("venue", null)} />
+              <SelectionBadge label="Cancha" value={selectedCourt?.name} onClear={() => updateSelection("court", null)} />
+            </div>
+          </div>
+        </div>
+
         {feedback ? (
-          <div className="shell-card border-sky-100 bg-sky-50 p-4 text-sm text-sky-900">
-            {feedback}
+          <div
+            className={`shell-card flex items-start gap-3 p-4 text-sm ${
+              bookingMutation.isError
+                ? "border-rose-200 bg-rose-50 text-rose-800"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            }`}
+          >
+            {bookingMutation.isError ? <ShieldAlert size={18} /> : <CheckCircle2 size={18} />}
+            <div>
+              <p className="font-semibold">{bookingMutation.isError ? "No pudimos reservar" : "Reserva creada"}</p>
+              <p className="mt-1">{feedback}</p>
+            </div>
           </div>
         ) : null}
 
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
           <div className="space-y-4">
-            <div className="shell-card p-5">
-              <FilterTitle icon={<Trophy size={18} />} title="1. Deporte" />
+            <section className="shell-card p-5">
+              <FilterTitle icon={Trophy} title="1. Deporte" subtitle="ElegÃ­ quÃ© querÃ©s jugar" />
               {sportsQuery.isLoading ? (
                 <LoadingCard label="Cargando deportes..." />
               ) : (
@@ -129,21 +183,19 @@ export function ExplorePage() {
                       key={sport.id}
                       className={`chip ${selectedSportId === sport.id ? "chip-active" : ""}`}
                       type="button"
-                      onClick={() =>
-                        updateSelection("sport", selectedSportId === sport.id ? null : sport.id)
-                      }
+                      onClick={() => updateSelection("sport", selectedSportId === sport.id ? null : sport.id)}
                     >
                       {sport.name}
                     </button>
                   ))}
                 </div>
               )}
-            </div>
+            </section>
 
-            <div className="shell-card p-5">
-              <FilterTitle icon={<MapPin size={18} />} title="2. Sede" />
+            <section className="shell-card p-5">
+              <FilterTitle icon={MapPin} title="2. Sede" subtitle="Filtrada segÃºn el deporte elegido" />
               {!selectedSportId ? (
-                <p className="mt-4 text-sm text-slate-500">Elegí un deporte para filtrar sedes.</p>
+                <StepHint message="ElegÃ­ un deporte para ver solo las sedes que aplican a esa bÃºsqueda." />
               ) : venuesQuery.isLoading ? (
                 <LoadingCard label="Buscando sedes..." />
               ) : venuesQuery.data?.length ? (
@@ -157,28 +209,31 @@ export function ExplorePage() {
                           : "border-slate-200 bg-white hover:border-slate-300"
                       }`}
                       type="button"
-                      onClick={() =>
-                        updateSelection("venue", selectedVenueId === venue.id ? null : venue.id)
-                      }
+                      onClick={() => updateSelection("venue", selectedVenueId === venue.id ? null : venue.id)}
                     >
-                      <p className="text-sm font-bold">{venue.name}</p>
-                      <p className="mt-1 text-sm opacity-80">
-                        {venue.address || "Dirección pendiente"}
-                      </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold">{venue.name}</p>
+                          <p className="mt-1 text-sm opacity-80">
+                            {venue.address || "DirecciÃ³n pendiente"}
+                          </p>
+                        </div>
+                        {selectedVenueId === venue.id ? <CheckCircle2 size={18} /> : null}
+                      </div>
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="mt-4 text-sm text-slate-500">No hay sedes para este deporte todavía.</p>
+                <StepHint message="No hay sedes disponibles para ese deporte todavÃ­a." tone="muted" />
               )}
-            </div>
+            </section>
           </div>
 
           <div className="space-y-4">
-            <div className="shell-card p-5">
-              <FilterTitle icon={<Trees size={18} />} title="3. Cancha" />
+            <section className="shell-card p-5">
+              <FilterTitle icon={Trees} title="3. Cancha" subtitle="ElegÃ­ dÃ³nde querÃ©s reservar" />
               {!selectedVenueId ? (
-                <p className="mt-4 text-sm text-slate-500">Elegí una sede para ver las canchas.</p>
+                <StepHint message="Primero seleccionÃ¡ una sede para ver sus canchas disponibles." />
               ) : courtsQuery.isLoading ? (
                 <LoadingCard label="Cargando canchas..." />
               ) : courtsQuery.data?.length ? (
@@ -192,30 +247,31 @@ export function ExplorePage() {
                           : "border-slate-200 bg-white hover:border-slate-300"
                       }`}
                       type="button"
-                      onClick={() =>
-                        updateSelection("court", selectedCourtId === court.id ? null : court.id)
-                      }
+                      onClick={() => updateSelection("court", selectedCourtId === court.id ? null : court.id)}
                     >
-                      <p className="text-sm font-bold">{court.name}</p>
-                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] opacity-80">
-                        {court.indoor ? "Indoor" : "Outdoor"} · {court.is_active ? "Activa" : "Inactiva"}
-                      </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold">{court.name}</p>
+                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] opacity-80">
+                            {court.indoor ? "Indoor" : "Outdoor"} Â· {court.is_active ? "Activa" : "Inactiva"}
+                          </p>
+                        </div>
+                        {selectedCourtId === court.id ? <CheckCircle2 size={18} /> : null}
+                      </div>
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="mt-4 text-sm text-slate-500">
-                  No hay canchas cargadas para esta combinación.
-                </p>
+                <StepHint message="No hay canchas cargadas para esta combinaciÃ³n de sede y deporte." tone="muted" />
               )}
-            </div>
+            </section>
 
-            <div className="shell-card p-5">
-              <FilterTitle icon={<CircleDollarSign size={18} />} title="4. Turnos" />
+            <section className="shell-card p-5">
+              <FilterTitle icon={CircleDollarSign} title="4. Turnos" subtitle="Solo mostramos lo que coincide con tu selecciÃ³n actual" />
               {!selectedCourtId ? (
                 <EmptyState
-                  title="Todavía no elegiste una cancha"
-                  description="Apenas selecciones una cancha vamos a consultar `/timeslots` para la fecha elegida."
+                  title="TodavÃ­a no elegiste una cancha"
+                  description="Apenas selecciones una cancha vamos a consultar los turnos disponibles para la fecha elegida."
                 />
               ) : timeslotsQuery.isLoading ? (
                 <LoadingCard label="Buscando turnos..." />
@@ -227,38 +283,43 @@ export function ExplorePage() {
                     const venue = court ? venuesById.get(court.venue_id) : null;
 
                     return (
-                      <article
-                        key={slot.id}
-                        className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
-                      >
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                              {sport?.name || "Deporte"} · {venue?.name || "Sede"}
-                            </p>
-                            <h3 className="mt-1 text-lg font-bold text-slate-950">
-                              {court?.name || "Cancha"}
-                            </h3>
-                            <p className="mt-2 text-sm text-slate-500">{dateLabel(slot.starts_at)}</p>
-                            <p className="mt-1 text-sm font-semibold text-slate-800">
-                              {currency(slot.price)}
-                            </p>
+                      <article key={slot.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex flex-col gap-4">
+                          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            <span>{sport?.name || "Deporte"}</span>
+                            <MoveRight size={14} />
+                            <span>{venue?.name || "Sede"}</span>
                           </div>
 
-                          {isAuthenticated ? (
-                            <button
-                              className="btn-primary"
-                              type="button"
-                              onClick={() => bookingMutation.mutate(slot.id)}
-                              disabled={bookingMutation.isPending}
-                            >
-                              {bookingMutation.isPending ? "Reservando..." : "Reservar"}
-                            </button>
-                          ) : (
-                            <Link className="btn-secondary" to="/login">
-                              Ingresá para reservar
-                            </Link>
-                          )}
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <h3 className="text-lg font-bold text-slate-950">
+                                {court?.name || "Cancha"}
+                              </h3>
+                              <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+                                <Clock3 size={16} />
+                                <span>{dateLabel(slot.starts_at)}</span>
+                              </div>
+                              <p className="mt-2 text-base font-semibold text-slate-900">
+                                {currency(slot.price)}
+                              </p>
+                            </div>
+
+                            {isAuthenticated ? (
+                              <button
+                                className="btn-primary"
+                                type="button"
+                                onClick={() => bookingMutation.mutate(slot.id)}
+                                disabled={bookingMutation.isPending}
+                              >
+                                {bookingMutation.isPending ? "Reservando..." : "Reservar"}
+                              </button>
+                            ) : (
+                              <Link className="btn-secondary" to="/login">
+                                IngresÃ¡ para reservar
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       </article>
                     );
@@ -267,10 +328,10 @@ export function ExplorePage() {
               ) : (
                 <EmptyState
                   title="Sin turnos para esa fecha"
-                  description="Probá con otra fecha o cargá más timeslots desde el backend."
+                  description="ProbÃ¡ con otra fecha o cargÃ¡ mÃ¡s timeslots desde el backend."
                 />
               )}
-            </div>
+            </section>
           </div>
         </div>
       </section>
@@ -278,15 +339,67 @@ export function ExplorePage() {
   );
 }
 
-function FilterTitle({ icon, title }: { icon: ReactNode; title: string }) {
+function FilterTitle({
+  icon: Icon,
+  title,
+  subtitle,
+}: {
+  icon: LucideIcon;
+  title: string;
+  subtitle: string;
+}) {
   return (
     <div className="flex items-center gap-3">
       <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-        {icon}
+        <Icon size={18} />
       </div>
       <div>
         <h3 className="text-lg font-bold text-slate-950">{title}</h3>
+        <p className="text-sm text-slate-500">{subtitle}</p>
       </div>
+    </div>
+  );
+}
+
+function SelectionBadge({
+  label,
+  value,
+  onClear,
+}: {
+  label: string;
+  value?: string | null;
+  onClear: () => void;
+}) {
+  if (!value) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-400">
+        {label}: pendiente
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+      <span>
+        {label}: {value}
+      </span>
+      <button type="button" className="rounded-full bg-white/10 p-1 text-white/80 transition hover:bg-white/20" onClick={onClear} aria-label={`Limpiar ${label}`}>
+        <X size={12} />
+      </button>
+    </span>
+  );
+}
+
+function StepHint({ message, tone = "default" }: { message: string; tone?: "default" | "muted" }) {
+  return (
+    <div
+      className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
+        tone === "muted"
+          ? "border-slate-200 bg-slate-50 text-slate-500"
+          : "border-sky-100 bg-sky-50 text-sky-900"
+      }`}
+    >
+      {message}
     </div>
   );
 }

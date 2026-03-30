@@ -1,30 +1,68 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { CircleAlert, LoaderCircle } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
+import { normalizeEmail, validateEmail, validatePassword } from "../lib/validation";
 import { useAuth } from "../modules/auth/auth-context";
+
+type LoginErrors = {
+  email?: string;
+  password?: string;
+};
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { isAuthenticated, login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<LoginErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const helperText = useMemo(() => {
+    if (loading) {
+      return "Estamos validando tus credenciales y preparando tu sesi√≥n.";
+    }
+
+    return "Us√° el mismo email y contrase√±a que registraste en la aplicaci√≥n.";
+  }, [loading]);
 
   if (isAuthenticated) {
     return <Navigate to="/explore" replace />;
   }
 
+  function clearFieldError(field: keyof LoginErrors) {
+    setErrors((current) => ({ ...current, [field]: undefined }));
+    setSubmitError(null);
+  }
+
+  function validateForm() {
+    const nextErrors: LoginErrors = {
+      email: validateEmail(email),
+      password: validatePassword(password),
+    };
+
+    setErrors(nextErrors);
+    return !nextErrors.email && !nextErrors.password;
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
+    setSubmitError(null);
+
+    if (!validateForm()) {
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await login({ email, password });
+      await login({ email: normalizeEmail(email), password: password.trim() });
       navigate("/explore");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "No pudimos iniciar sesiÛn");
+      setSubmitError(
+        submitError instanceof Error ? submitError.message : "No pudimos iniciar sesi√≥n.",
+      );
     } finally {
       setLoading(false);
     }
@@ -37,59 +75,81 @@ export function LoginPage() {
         <div className="shell-card p-6 sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-skyline">Acceso</p>
           <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
-            Entr· a tu cuenta
+            Entr√° a tu cuenta
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            Tu backend ya usa JWT con refresh. En el frontend dejamos sesiÛn persistida para que la
+            Tu backend ya usa JWT con refresh. En el frontend dejamos sesi√≥n persistida para que la
             app se sienta continua, sobre todo en mobile.
           </p>
         </div>
 
-        <form className="shell-card space-y-4 p-6 sm:p-8" onSubmit={handleSubmit}>
+        <form className="shell-card space-y-4 p-6 sm:p-8" onSubmit={handleSubmit} noValidate>
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="email">
               Email
             </label>
             <input
               id="email"
-              className="field"
+              className={`field ${errors.email ? "field-error" : ""}`}
               type="email"
               autoComplete="email"
               placeholder="vos@correo.com"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                clearFieldError("email");
+              }}
               required
             />
+            {errors.email ? <p className="mt-2 text-sm text-rose-700">{errors.email}</p> : null}
           </div>
 
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="password">
-              ContraseÒa
+              Contrase√±a
             </label>
             <input
               id="password"
-              className="field"
+              className={`field ${errors.password ? "field-error" : ""}`}
               type="password"
               autoComplete="current-password"
-              placeholder="Tu contraseÒa"
+              placeholder="Tu contrase√±a"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                clearFieldError("password");
+              }}
               required
             />
+            {errors.password ? <p className="mt-2 text-sm text-rose-700">{errors.password}</p> : null}
           </div>
 
-          {error ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            {helperText}
+          </div>
+
+          {submitError ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {error}
+              <div className="flex items-start gap-2">
+                <CircleAlert className="mt-0.5" size={16} />
+                <span>{submitError}</span>
+              </div>
             </div>
           ) : null}
 
           <button className="btn-primary w-full" type="submit" disabled={loading}>
-            {loading ? "Ingresando..." : "Ingresar"}
+            {loading ? (
+              <span className="inline-flex items-center gap-2">
+                <LoaderCircle className="animate-spin" size={16} />
+                Ingresando...
+              </span>
+            ) : (
+              "Ingresar"
+            )}
           </button>
 
           <p className="text-center text-sm text-slate-500">
-            øNo tenÈs cuenta? {" "}
+            ¬øNo ten√©s cuenta? {" "}
             <Link className="font-semibold text-slate-900" to="/register">
               Crear cuenta
             </Link>

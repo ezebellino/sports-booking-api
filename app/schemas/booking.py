@@ -1,6 +1,10 @@
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from datetime import datetime
+from app.schemas.court import CourtPublic
+from app.schemas.sport import SportPublic
+from app.schemas.timeslot import TimeSlotPublic
+from app.schemas.venue import VenuePublic
 
 class BookingCreate(BaseModel):
     timeslot_id: UUID
@@ -14,3 +18,16 @@ class BookingPublic(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class CourtBookingPublic(CourtPublic):
+    venue: VenuePublic
+    sport: SportPublic
+
+
+class TimeSlotBookingPublic(TimeSlotPublic):
+    court: CourtBookingPublic
+
+
+class BookingDetailPublic(BookingPublic):
+    timeslot: TimeSlotBookingPublic

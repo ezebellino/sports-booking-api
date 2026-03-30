@@ -1,4 +1,4 @@
-from pydantic import BaseModel 
+from pydantic import BaseModel, ConfigDict 
 from uuid import UUID
 
 class CourtCreate(BaseModel):
@@ -14,6 +14,8 @@ class CourtUpdate(BaseModel):
     is_active: bool | None = None 
     
 class CourtPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     venue_id: UUID
     sport_id: UUID

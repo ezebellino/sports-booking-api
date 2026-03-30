@@ -50,6 +50,15 @@ export type Booking = {
   updated_at: string;
 };
 
+export type BookingDetail = Booking & {
+  timeslot: TimeSlot & {
+    court: Court & {
+      venue: Venue;
+      sport: Sport;
+    };
+  };
+};
+
 type RequestOptions = {
   method?: string;
   body?: BodyInit | null;
@@ -75,7 +84,7 @@ async function refreshAccessToken() {
 
   if (!response.ok) {
     clearTokens();
-    throw new Error("Refresh token inv·lido");
+    throw new Error("Refresh token inv√°lido");
   }
 
   const data = (await response.json()) as {
@@ -197,7 +206,7 @@ export const api = {
     return request<TimeSlot[]>(`/timeslots?${searchParams.toString()}`);
   },
 
-  listBookings: () => request<Booking[]>("/bookings", { auth: true }),
+  listBookings: () => request<BookingDetail[]>("/bookings", { auth: true }),
 
   createBooking: (timeslotId: string) =>
     request<Booking>("/bookings", {

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 
 class SportCreate(BaseModel):
@@ -10,6 +10,8 @@ class SportUpdate(BaseModel):
     description: str | None = None
     
 class SportPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     description: str | None = None
