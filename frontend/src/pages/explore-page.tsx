@@ -12,14 +12,14 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
 import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api } from "../lib/api";
-import { currency, dateInputDefault, dateLabel } from "../lib/format";
+import { currency, dateInputDefault, dateLabel, localDateBounds } from "../lib/format";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function ExplorePage() {
@@ -28,6 +28,7 @@ export function ExplorePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedDate, setSelectedDate] = useState(dateInputDefault);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const dayBounds = useMemo(() => localDateBounds(selectedDate), [selectedDate]);
 
   const selectedSportId = searchParams.get("sport");
   const selectedVenueId = searchParams.get("venue");
@@ -49,8 +50,8 @@ export function ExplorePage() {
     queryFn: () =>
       api.listTimeslots({
         courtId: selectedCourtId,
-        dateFrom: `${selectedDate}T00:00:00`,
-        dateTo: `${selectedDate}T23:59:59`,
+        dateFrom: dayBounds.startIso,
+        dateTo: dayBounds.endIso,
       }),
     enabled: Boolean(selectedCourtId),
   });

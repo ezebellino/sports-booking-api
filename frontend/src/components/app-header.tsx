@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { CalendarCheck2, MapPinned, Ticket } from "lucide-react";
+import { CalendarCheck2, MapPinned, Shield, Ticket } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function AppHeader() {
-  const { isAuthenticated, logout, user } = useAuth();
+  const { isAdmin, isAuthenticated, logout, user } = useAuth();
+  const roleLabel = user?.role === "admin" ? "Administrador" : "Usuario";
 
   return (
     <header className="mb-6 flex flex-col gap-4 pt-2">
@@ -28,6 +29,11 @@ export function AppHeader() {
           <DesktopNavLink to="/bookings" icon={<CalendarCheck2 size={16} />}>
             Mis reservas
           </DesktopNavLink>
+          {isAdmin ? (
+            <DesktopNavLink to="/admin/timeslots" icon={<Shield size={16} />}>
+              Admin
+            </DesktopNavLink>
+          ) : null}
           {isAuthenticated ? (
             <button className="btn-secondary" onClick={logout} type="button">
               Salir
@@ -44,10 +50,25 @@ export function AppHeader() {
         <div className="shell-card flex items-center justify-between gap-3 px-4 py-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Sesi�n activa
+              Sesión activa
             </p>
-            <p className="text-sm font-semibold text-slate-800">
-              {user.full_name || user.email}
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-slate-800">{user.full_name || user.email}</p>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${
+                  user.role === "admin"
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                <Shield size={12} />
+                {roleLabel}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {user.role === "admin"
+                ? "Puede gestionar usuarios, turnos y próximas herramientas administrativas."
+                : "Puede registrarse, explorar turnos y administrar sus propias reservas."}
             </p>
           </div>
           <button className="btn-secondary md:hidden" onClick={logout} type="button">

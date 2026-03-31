@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from app.models.court import Court
 from app.models.sport import Sport
 from app.models.timeslot import TimeSlot
+from app.models.user import User
 from app.models.venue import Venue
 
 
@@ -30,7 +31,7 @@ def register_and_login(client, email: str, password: str, full_name: str = "Test
 
 
 def seed_timeslot(db_session, *, capacity: int = 1) -> TimeSlot:
-    sport = Sport(name="Padel", description="Partidos rápidos")
+    sport = Sport(name="Padel", description="Partidos rÃƒÆ’Ã‚Â¡pidos")
     db_session.add(sport)
     db_session.flush()
 
@@ -79,6 +80,7 @@ def test_register_login_me_and_refresh_flow(client):
 
     assert register_response.status_code == 201
     assert register_response.json()["email"] == email
+    assert register_response.json()["role"] == "user"
 
     login_response = client.post("/auth/login", data={"username": email, "password": password})
     assert login_response.status_code == 200
@@ -91,11 +93,99 @@ def test_register_login_me_and_refresh_flow(client):
     me_response = client.get("/auth/me", headers=auth_headers(tokens["access_token"]))
     assert me_response.status_code == 200
     assert me_response.json()["full_name"] == "Player One"
+    assert me_response.json()["role"] == "user"
 
     refresh_response = client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
     assert refresh_response.status_code == 200
     assert refresh_response.json()["access_token"]
     assert refresh_response.json()["refresh_token"]
+
+
+def test_admin_route_requires_admin_role(client, db_session):
+    user_token = register_and_login(client, "normal@example.com", "password123", "Normal User")
+    forbidden_response = client.get("/admin/me", headers=auth_headers(user_token))
+    assert forbidden_response.status_code == 403
+    assert forbidden_response.json()["detail"] == "Acceso exclusivo para administradores"
+
+    admin_user = db_session.query(User).filter(User.email == "normal@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "normal@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    admin_response = client.get("/admin/me", headers=auth_headers(admin_token))
+    assert admin_response.status_code == 200
+    assert admin_response.json()["role"] == "admin"
+
+    users_response = client.get("/admin/users", headers=auth_headers(admin_token))
+    assert users_response.status_code == 200
+    assert users_response.json()[0]["role"] in {"admin", "user"}
+
+
+def test_only_admin_can_create_timeslots(client, db_session):
+    seed = seed_timeslot(db_session, capacity=2)
+    user_token = register_and_login(client, "timeslot-user@example.com", "password123", "Timeslot User")
+
+    forbidden_response = client.post(
+        "/timeslots",
+        json={
+            "court_id": str(seed.court_id),
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(),
+            "ends_at": (datetime.now(timezone.utc) + timedelta(days=2, hours=1)).isoformat(),
+            "capacity": 1,
+            "price": 15000,
+            "is_active": True,
+        },
+        headers=auth_headers(user_token),
+    )
+    assert forbidden_response.status_code == 403
+
+
+def test_admin_bulk_create_timeslots_for_multiple_courts(client, db_session):
+    seed = seed_timeslot(db_session, capacity=2)
+    second_court = Court(
+        venue_id=seed.court.venue_id,
+        sport_id=seed.court.sport_id,
+        name="Cancha 2",
+        indoor=False,
+        is_active=True,
+    )
+    db_session.add(second_court)
+    db_session.commit()
+    db_session.refresh(second_court)
+
+    register_and_login(client, "bulk-admin@example.com", "password123", "Bulk Admin")
+    admin_user = db_session.query(User).filter(User.email == "bulk-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "bulk-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    base_day = datetime.now(timezone.utc).replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=4)
+    response = client.post(
+        "/admin/timeslots/bulk",
+        json={
+            "court_ids": [str(seed.court_id), str(second_court.id)],
+            "window_starts_at": base_day.isoformat(),
+            "window_ends_at": (base_day + timedelta(hours=2)).isoformat(),
+            "slot_minutes": 60,
+            "capacity": 4,
+            "price": 18000,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_token),
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["created_count"] == 4
+    assert payload["skipped_count"] == 0
 
 
 def test_booking_list_returns_nested_timeslot_details(client, db_session):
@@ -142,3 +232,36 @@ def test_booking_rejects_when_timeslot_is_full(client, db_session):
     )
     assert second_response.status_code == 409
     assert second_response.json()["detail"] == "Timeslot is full"
+def test_bulk_create_uses_end_time_as_last_allowed_start(client, db_session):
+    seed = seed_timeslot(db_session, capacity=2)
+
+    register_and_login(client, "late-admin@example.com", "password123", "Late Admin")
+    admin_user = db_session.query(User).filter(User.email == "late-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "late-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    base_day = datetime.now(timezone.utc).replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=5)
+    response = client.post(
+        "/admin/timeslots/bulk",
+        json={
+            "court_ids": [str(seed.court_id)],
+            "window_starts_at": base_day.isoformat(),
+            "window_ends_at": (base_day + timedelta(hours=14)).isoformat(),
+            "slot_minutes": 90,
+            "capacity": 4,
+            "price": 18000,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_token),
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    starts = [datetime.fromisoformat(slot["starts_at"].replace("Z", "+00:00")) for slot in payload["created_slots"]]
+    assert payload["created_count"] == 10
+    assert starts[-1] == base_day + timedelta(hours=13, minutes=30)

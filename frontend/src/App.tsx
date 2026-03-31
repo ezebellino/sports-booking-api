@@ -1,6 +1,7 @@
-import { CalendarDays, Compass, House, LogIn, Ticket } from "lucide-react";
+import { CalendarDays, Compass, House, LogIn, Shield, Ticket } from "lucide-react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./modules/auth/auth-context";
+import { AdminTimeslotsPage } from "./pages/admin-timeslots-page";
 import { ExplorePage } from "./pages/explore-page";
 import { HomePage } from "./pages/home-page";
 import { LoginPage } from "./pages/login-page";
@@ -14,7 +15,7 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-hero px-4">
         <div className="shell-card w-full max-w-sm p-6 text-center text-sm text-slate-500">
-          Cargando sesión...
+          Cargando sesiÃ³n...
         </div>
       </div>
     );
@@ -27,8 +28,32 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
   return children;
 }
 
+function AdminRoute({ children }: { children: React.ReactElement }) {
+  const { isAuthenticated, isAdmin, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-hero px-4">
+        <div className="shell-card w-full max-w-sm p-6 text-center text-sm text-slate-500">
+          Validando permisos...
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/explore" replace />;
+  }
+
+  return children;
+}
+
 function AppShell() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
 
   return (
     <div className="min-h-screen bg-hero">
@@ -46,6 +71,14 @@ function AppShell() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/timeslots"
+            element={
+              <AdminRoute>
+                <AdminTimeslotsPage />
+              </AdminRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -54,7 +87,11 @@ function AppShell() {
         <div className="mx-auto flex max-w-md items-center justify-between gap-2">
           <MobileLink to="/" label="Inicio" icon={House} />
           <MobileLink to="/explore" label="Explorar" icon={Compass} />
-          <MobileLink to="/bookings" label="Reservas" icon={Ticket} />
+          {isAdmin ? (
+            <MobileLink to="/admin/timeslots" label="Admin" icon={Shield} />
+          ) : (
+            <MobileLink to="/bookings" label="Reservas" icon={Ticket} />
+          )}
           <MobileLink
             to={isAuthenticated ? "/bookings" : "/login"}
             label={isAuthenticated ? "Agenda" : "Entrar"}

@@ -8,7 +8,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function HomePage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
   const sportsQuery = useQuery({ queryKey: ["sports"], queryFn: api.listSports });
   const venuesQuery = useQuery({ queryKey: ["venues"], queryFn: () => api.listVenues(null) });
 
@@ -20,15 +20,15 @@ export function HomePage() {
         <div className="shell-card overflow-hidden p-6 sm:p-8">
           <div className="inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-orange-700">
             <Sparkles size={14} />
-            Mobile-first booking flow
+            Sports booking listo para operar
           </div>
           <h2 className="mt-5 max-w-xl text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
-            Reserv� una cancha en pocos toques, sin perderte entre turnos.
+            Reservá una cancha en pocos toques, con un flujo claro de punta a punta.
           </h2>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-            Armamos una experiencia clara para elegir deporte, sede, cancha y horario desde el
-            celular. El backend ya lo ten�as bien planteado; ahora lo estamos llevando a una
-            interfaz usable y lista para iterar.
+            La experiencia está pensada para celular: primero elegís deporte, después sede,
+            luego cancha y por último el turno disponible. Si sos administrador, además tenés
+            herramientas para generar y editar bloques completos de horarios.
           </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -44,19 +44,19 @@ export function HomePage() {
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <MetricCard label="Deportes" value={String(sportsQuery.data?.length ?? 0)} icon={<ShieldCheck size={18} />} />
             <MetricCard label="Sedes" value={String(venuesQuery.data?.length ?? 0)} icon={<Map size={18} />} />
-            <MetricCard label="Flujo" value="1 sola vista" icon={<CalendarRange size={18} />} />
+            <MetricCard label="Admin" value={isAdmin ? "Activo" : "Usuario"} icon={<CalendarRange size={18} />} />
           </div>
         </div>
 
         <div className="grid gap-4">
           {sportsQuery.isLoading ? (
-            <LoadingCard label="Traemos deportes desde tu API..." />
+            <LoadingCard label="Cargando accesos rápidos..." />
           ) : (
             <div className="shell-card p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                 Deporte primero
               </p>
-              <h3 className="mt-2 text-xl font-bold text-slate-950">Entradas r�pidas</h3>
+              <h3 className="mt-2 text-xl font-bold text-slate-950">Accesos rápidos</h3>
               <div className="mt-4 flex flex-wrap gap-2">
                 {sportsQuery.data?.slice(0, 6).map((sport) => (
                   <Link key={sport.id} to={`/explore?sport=${sport.id}`} className="chip hover:border-slate-300">
@@ -69,12 +69,13 @@ export function HomePage() {
 
           <div className="shell-card p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Qu� sigue
+              Qué podés hacer
             </p>
             <ul className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
-              <li>Login y registro con sesi�n persistida.</li>
-              <li>Exploraci�n por sede, cancha y fecha con filtros m�viles.</li>
-              <li>Reserva efectiva usando `/bookings` y vista personal de agenda.</li>
+              <li>Entrar con tu cuenta y mantener la sesión activa.</li>
+              <li>Explorar por sede, cancha y fecha con un flujo simple.</li>
+              <li>Reservar turnos y revisar tu agenda personal.</li>
+              <li>{isAdmin ? "Administrar turnos masivos, edición y control por cancha." : "Ver el panel admin cuando tu rol tenga permisos."}</li>
             </ul>
           </div>
         </div>
@@ -83,16 +84,16 @@ export function HomePage() {
       <section className="mt-8 grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <SectionTitle
-            eyebrow="Flujo"
-            title="Un frontend pensado para lo que ya expone tu backend"
-            description="No inventamos endpoints nuevos para arrancar. La UI compone deportes, sedes, canchas y turnos desde los recursos existentes y deja base para sumar admins, pagos y cancelaciones."
+            eyebrow="Plataforma"
+            title="Una base lista para reservas reales y operación diaria"
+            description="El frontend ya conversa con tus recursos actuales de deportes, sedes, canchas, turnos, autenticación y reservas. Sobre esa base estamos sumando experiencia admin, validaciones y automatizaciones para el día a día del complejo."
           />
         </div>
         <div className="shell-card p-6">
-          <p className="text-sm font-semibold text-slate-700">Base t�cnica sugerida</p>
+          <p className="text-sm font-semibold text-slate-700">Base técnica actual</p>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            React + Vite + TypeScript + Tailwind + React Query. Liviano para empezar, s�lido para
-            crecer.
+            React + Vite + TypeScript + Tailwind + React Query. Rápido para iterar,
+            claro para mantener y cómodo para seguir creciendo.
           </p>
         </div>
       </section>

@@ -19,12 +19,13 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     user = User(
         email=payload.email,
         full_name=payload.full_name,
-        hashed_password=get_password_hash(payload.password)
+        hashed_password=get_password_hash(payload.password),
+        role="user",
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return UserPublic(id=str(user.id), email=user.email, full_name=user.full_name)
+    return UserPublic(id=str(user.id), email=user.email, full_name=user.full_name, role=user.role)
 
 @router.post("/login", response_model=TokenPair)
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -36,7 +37,7 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     if not ok:
         raise HTTPException(status_code=401, detail="Credenciales inválidas (password no matchea)")
 
-    access = create_access_token(subject=str(user.id), extra={"email": user.email})
+    access = create_access_token(subject=str(user.id), extra={"email": user.email, "role": user.role})
     refresh = create_refresh_token(subject=str(user.id))
     return TokenPair(access_token=access, refresh_token=refresh)
 
@@ -55,7 +56,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    access = create_access_token(subject=str(user.id), extra={"email": user.email})
+    access = create_access_token(subject=str(user.id), extra={"email": user.email, "role": user.role})
     new_refresh = create_refresh_token(subject=str(user.id))
 
     return TokenPair(access_token=access, refresh_token=new_refresh)
@@ -72,7 +73,7 @@ def me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return UserPublic(id=str(user.id), email=user.email, full_name=user.full_name)
+    return UserPublic(id=str(user.id), email=user.email, full_name=user.full_name, role=user.role)
 
 @router.patch("/change-password", status_code=204)
 def change_password(new_password: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):

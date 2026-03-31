@@ -1,15 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
+from app.api.deps.auth import require_admin
 from app.db.session import get_db
 from app.models.timeslot import TimeSlot
 from app.models.court import Court
+from app.models.user import User
 from app.schemas.timeslot import TimeSlotCreate, TimeSlotUpdate, TimeSlotPublic
 
 router = APIRouter(prefix="/timeslots", tags=["timeslots"])
 
 @router.post("", response_model=TimeSlotPublic, status_code=201)
-def create_timeslot(payload: TimeSlotCreate, db: Session = Depends(get_db)):
+def create_timeslot(
+    payload: TimeSlotCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
     court = db.get(Court, payload.court_id)
     if not court: raise HTTPException(400, "court_id not found")
     t = TimeSlot(
@@ -39,7 +45,12 @@ def list_timeslots(
     return qry.order_by(TimeSlot.starts_at.asc()).limit(limit).offset(offset).all()
 
 @router.patch("/{timeslot_id}", response_model=TimeSlotPublic)
-def update_timeslot(timeslot_id: str, payload: TimeSlotUpdate, db: Session = Depends(get_db)):
+def update_timeslot(
+    timeslot_id: str,
+    payload: TimeSlotUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
     t = db.get(TimeSlot, timeslot_id)
     if not t: raise HTTPException(404, "TimeSlot not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -48,7 +59,11 @@ def update_timeslot(timeslot_id: str, payload: TimeSlotUpdate, db: Session = Dep
     return t
 
 @router.delete("/{timeslot_id}", status_code=204)
-def delete_timeslot(timeslot_id: str, db: Session = Depends(get_db)):
+def delete_timeslot(
+    timeslot_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
     t = db.get(TimeSlot, timeslot_id)
     if not t: raise HTTPException(404, "TimeSlot not found")
     db.delete(t); db.commit()

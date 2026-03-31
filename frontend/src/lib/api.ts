@@ -6,6 +6,7 @@ export type User = {
   id: string;
   email: string;
   full_name: string | null;
+  role: "admin" | "user";
 };
 
 export type Sport = {
@@ -39,6 +40,13 @@ export type TimeSlot = {
   capacity: number;
   price: number | null;
   is_active: boolean;
+};
+
+export type TimeSlotBulkCreateResult = {
+  created_count: number;
+  skipped_count: number;
+  created_slots: TimeSlot[];
+  skipped_reasons: string[];
 };
 
 export type Booking = {
@@ -205,6 +213,51 @@ export const api = {
     }
     return request<TimeSlot[]>(`/timeslots?${searchParams.toString()}`);
   },
+
+  createTimeslot: (input: {
+    court_id: string;
+    starts_at: string;
+    ends_at: string;
+    capacity: number;
+    price: number | null;
+    is_active: boolean;
+  }) =>
+    request<TimeSlot>("/timeslots", {
+      method: "POST",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  bulkCreateTimeslots: (input: {
+    court_ids: string[];
+    window_starts_at: string;
+    window_ends_at: string;
+    slot_minutes: number;
+    capacity: number;
+    price: number | null;
+    is_active: boolean;
+  }) =>
+    request<TimeSlotBulkCreateResult>("/admin/timeslots/bulk", {
+      method: "POST",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  updateTimeslot: (timeslotId: string, input: {
+    starts_at?: string;
+    ends_at?: string;
+    capacity?: number;
+    price?: number | null;
+    is_active?: boolean;
+  }) =>
+    request<TimeSlot>(`/timeslots/${timeslotId}`, {
+      method: "PATCH",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
 
   listBookings: () => request<BookingDetail[]>("/bookings", { auth: true }),
 

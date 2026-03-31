@@ -12,6 +12,7 @@ import { clearTokens, getStoredTokens, storeTokens } from "../../lib/storage";
 type AuthContextValue = {
   user: User | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   loading: boolean;
   login: (input: { email: string; password: string }) => Promise<void>;
   register: (input: { email: string; password: string; full_name: string }) => Promise<void>;
@@ -73,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isAuthenticated: Boolean(user),
+        isAdmin: user?.role === "admin",
         loading,
         login,
         register,
