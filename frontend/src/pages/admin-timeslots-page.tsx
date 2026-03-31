@@ -9,7 +9,7 @@ import {
   Shield,
   TimerReset,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdminNav } from "../components/admin-nav";
 import { AppHeader } from "../components/app-header";
 import { EmptyState } from "../components/empty-state";
@@ -45,6 +45,8 @@ type PreviewRow = {
 export function AdminTimeslotsPage() {
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState(dateInputDefault);
+  const [filterSportId, setFilterSportId] = useState<string>("");
+  const [filterVenueId, setFilterVenueId] = useState<string>("");
   const [filterCourtId, setFilterCourtId] = useState<string>("");
   const [bulkCourtIds, setBulkCourtIds] = useState<string[]>([]);
   const [windowStart, setWindowStart] = useState("09:00");
@@ -65,16 +67,25 @@ export function AdminTimeslotsPage() {
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
   const dayBounds = useMemo(() => localDateBounds(selectedDate), [selectedDate]);
 
+  const sportsQuery = useQuery({
+    queryKey: ["sports"],
+    queryFn: api.listSports,
+  });
+
+  const venuesQuery = useQuery({
+    queryKey: ["venues", "timeslots-admin"],
+    queryFn: () => api.listVenues(null),
+  });
+
   const courtsQuery = useQuery({
     queryKey: ["courts", "all-admin"],
     queryFn: () => api.listCourts({}),
   });
 
   const timeslotsQuery = useQuery({
-    queryKey: ["admin-timeslots", filterCourtId, selectedDate],
+    queryKey: ["admin-timeslots", selectedDate],
     queryFn: () =>
       api.listTimeslots({
-        courtId: filterCourtId || undefined,
         dateFrom: dayBounds.startIso,
         dateTo: dayBounds.endIso,
       }),
@@ -89,10 +100,53 @@ export function AdminTimeslotsPage() {
       }),
   });
 
+  const sportsById = useMemo(
+    () => new Map((sportsQuery.data ?? []).map((sport) => [sport.id, sport])),
+    [sportsQuery.data],
+  );
+  const venuesById = useMemo(
+    () => new Map((venuesQuery.data ?? []).map((venue) => [venue.id, venue])),
+    [venuesQuery.data],
+  );
   const courtsById = useMemo(
     () => new Map((courtsQuery.data ?? []).map((court) => [court.id, court])),
     [courtsQuery.data],
   );
+
+  const filteredVenues = useMemo(() => {
+    return (venuesQuery.data ?? []).filter((venue) => {
+      if (!filterSportId) {
+        return true;
+      }
+      return !venue.allowed_sport_id || venue.allowed_sport_id === filterSportId;
+    });
+  }, [filterSportId, venuesQuery.data]);
+
+  const filteredCourts = useMemo(() => {
+    return (courtsQuery.data ?? []).filter((court) => {
+      if (filterSportId && court.sport_id !== filterSportId) {
+        return false;
+      }
+      if (filterVenueId && court.venue_id !== filterVenueId) {
+        return false;
+      }
+      return true;
+    });
+  }, [courtsQuery.data, filterSportId, filterVenueId]);
+
+  useEffect(() => {
+    if (filterVenueId && !filteredVenues.some((venue) => venue.id === filterVenueId)) {
+      setFilterVenueId("");
+    }
+  }, [filterVenueId, filteredVenues]);
+
+  useEffect(() => {
+    if (filterCourtId && !filteredCourts.some((court) => court.id === filterCourtId)) {
+      setFilterCourtId("");
+    }
+
+    setBulkCourtIds((current) => current.filter((courtId) => filteredCourts.some((court) => court.id === courtId)));
+  }, [filterCourtId, filteredCourts]);
 
   const previewSlots = useMemo(() => {
     const parsedSlotMinutes = Number(slotMinutes);
@@ -165,6 +219,20 @@ export function AdminTimeslotsPage() {
       crossesMidnight,
     };
   }, [bulkCourtIds, courtsById, existingDayTimeslotsQuery.data, previewSlots, selectedDate]);
+
+  const visibleTimeslots = useMemo(() => {
+    const allowedCourtIds = new Set(filteredCourts.map((court) => court.id));
+
+    return (timeslotsQuery.data ?? []).filter((timeslot) => {
+      if (!allowedCourtIds.has(timeslot.court_id)) {
+        return false;
+      }
+      if (filterCourtId && timeslot.court_id !== filterCourtId) {
+        return false;
+      }
+      return true;
+    });
+  }, [filterCourtId, filteredCourts, timeslotsQuery.data]);
 
   const bulkCreateMutation = useMutation({
     mutationFn: api.bulkCreateTimeslots,
@@ -290,6 +358,52 @@ export function AdminTimeslotsPage() {
           description="Generá bloques completos por rango horario, elegí la duración de cada turno y repetí la carga en varias canchas. También podés editar turnos ya creados desde la misma pantalla."
         />
 
+        <div className="shell-card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-sport-filter">
+              Deporte
+            </label>
+            <select id="timeslot-sport-filter" className="field" value={filterSportId} onChange={(event) => setFilterSportId(event.target.value)}>
+              <option value="">Todos los deportes</option>
+              {(sportsQuery.data ?? []).map((sport) => (
+                <option key={sport.id} value={sport.id}>
+                  {sport.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-venue-filter">
+              Sede
+            </label>
+            <select id="timeslot-venue-filter" className="field" value={filterVenueId} onChange={(event) => setFilterVenueId(event.target.value)}>
+              <option value="">Todas las sedes</option>
+              {filteredVenues.map((venue) => (
+                <option key={venue.id} value={venue.id}>
+                  {venue.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-court-filter-header">
+              Canchas visibles
+            </label>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              {filteredCourts.length} canchas para este filtro
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-date-filter-header">
+              Día
+            </label>
+            <input id="timeslot-date-filter-header" className="field" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+          </div>
+        </div>
+
         <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
           <form className="shell-card space-y-4 p-5" onSubmit={handleBulkSubmit}>
             <div className="flex items-center gap-3">
@@ -318,7 +432,7 @@ export function AdminTimeslotsPage() {
             <div>
               <p className="mb-2 block text-sm font-semibold text-slate-700">Canchas</p>
               <div className="grid gap-2 sm:grid-cols-2">
-                {courtsQuery.data?.map((court) => (
+                {filteredCourts.map((court) => (
                   <label
                     key={court.id}
                     className={`rounded-2xl border px-4 py-3 text-sm transition ${
@@ -497,7 +611,7 @@ export function AdminTimeslotsPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h3 className="text-lg font-bold text-slate-950">Turnos existentes</h3>
-                <p className="text-sm text-slate-500">Filtrá por fecha y cancha, luego elegí uno para editarlo.</p>
+                <p className="text-sm text-slate-500">Usá los filtros superiores para bajar de deporte a sede y después elegir la cancha exacta que querés revisar.</p>
               </div>
               <div className="shell-card flex items-center gap-3 px-4 py-3 shadow-none">
                 <CalendarClock className="text-skyline" size={18} />
@@ -511,7 +625,7 @@ export function AdminTimeslotsPage() {
               </label>
               <select id="timeslot-court-filter" className="field" value={filterCourtId} onChange={(event) => setFilterCourtId(event.target.value)}>
                 <option value="">Todas las canchas</option>
-                {courtsQuery.data?.map((court) => (
+                {filteredCourts.map((court) => (
                   <option key={court.id} value={court.id}>{court.name}</option>
                 ))}
               </select>
@@ -524,7 +638,7 @@ export function AdminTimeslotsPage() {
               {timeslotsQuery.isLoading ? (
                 <LoadingCard label="Cargando turnos..." />
               ) : timeslotsQuery.data?.length ? (
-                timeslotsQuery.data.map((timeslot) => {
+                visibleTimeslots.map((timeslot) => {
                   const court = courtsById.get(timeslot.court_id);
                   const isEditing = editingTimeSlotId === timeslot.id;
 
@@ -590,4 +704,13 @@ export function AdminTimeslotsPage() {
     </>
   );
 }
+
+
+
+
+
+
+
+
+
 

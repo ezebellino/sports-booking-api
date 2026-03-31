@@ -545,7 +545,7 @@ export function AdminInventoryPage() {
                   className="field sm:col-span-2"
                   value={venueSearch}
                   onChange={(event) => setVenueSearch(event.target.value)}
-                  placeholder="Buscar por nombre o direcci?n"
+                  placeholder="Buscar por nombre o dirección"
                 />
                 <select className="field" value={venueSportFilter} onChange={(event) => setVenueSportFilter(event.target.value)}>
                   <option value="">Todos los deportes</option>
@@ -819,3 +819,4 @@ function Feedback({ tone, message }: { tone: "error" | "success"; message: strin
     </div>
   );
 }
+
