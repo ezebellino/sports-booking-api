@@ -214,7 +214,7 @@ export function AdminTimeslotsPage() {
     setBulkSuccess(null);
 
     if (!bulkCourtIds.length) {
-      setBulkError("SeleccionÃ¡ al menos una cancha.");
+      setBulkError("Seleccioná al menos una cancha.");
       return;
     }
 
@@ -222,12 +222,12 @@ export function AdminTimeslotsPage() {
     const parsedCapacity = Number(capacity);
 
     if (!Number.isFinite(parsedSlotMinutes) || parsedSlotMinutes <= 0) {
-      setBulkError("La duraciÃ³n del turno debe ser mayor a 0 minutos.");
+      setBulkError("La duración del turno debe ser mayor a 0 minutos.");
       return;
     }
 
     if (!Number.isFinite(parsedCapacity) || parsedCapacity < 1) {
-      setBulkError("La capacidad debe ser un nÃºmero mayor o igual a 1.");
+      setBulkError("La capacidad debe ser un número mayor o igual a 1.");
       return;
     }
 
@@ -262,7 +262,7 @@ export function AdminTimeslotsPage() {
 
     const parsedCapacity = Number(editCapacity);
     if (!Number.isFinite(parsedCapacity) || parsedCapacity < 1) {
-      setEditError("La capacidad debe ser un nÃºmero mayor o igual a 1.");
+      setEditError("La capacidad debe ser un número mayor o igual a 1.");
       return;
     }
 
@@ -286,8 +286,8 @@ export function AdminTimeslotsPage() {
 
         <SectionTitle
           eyebrow="Admin"
-          title="GestiÃ³n automÃ¡tica de turnos"
-          description="GenerÃ¡ bloques completos por rango horario, elegÃ­ la duraciÃ³n de cada turno y repetÃ­ la carga en varias canchas. TambiÃ©n podÃ©s editar turnos ya creados desde la misma pantalla."
+          title="Gestión automática de turnos"
+          description="Generá bloques completos por rango horario, elegí la duración de cada turno y repetí la carga en varias canchas. También podés editar turnos ya creados desde la misma pantalla."
         />
 
         <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
@@ -297,14 +297,14 @@ export function AdminTimeslotsPage() {
                 <Shield size={18} />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-950">GeneraciÃ³n masiva</h3>
+                <h3 className="text-lg font-bold text-slate-950">Generación masiva</h3>
                 <p className="text-sm text-slate-500">Ideal para cargar una jornada completa de una o varias canchas.</p>
               </div>
             </div>
 
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-date">
-                DÃ­a
+                Día
               </label>
               <input
                 id="bulk-date"
@@ -358,7 +358,7 @@ export function AdminTimeslotsPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="slot-minutes">
-                  DuraciÃ³n
+                  Duración
                 </label>
                 <select id="slot-minutes" className="field" value={slotMinutes} onChange={(event) => setSlotMinutes(event.target.value)}>
                   <option value="60">60 min</option>
@@ -393,8 +393,8 @@ export function AdminTimeslotsPage() {
                   <p className="text-sm font-semibold text-slate-900">Vista previa del bloque</p>
                   <p className="text-sm text-slate-500">
                     {previewSlots.length
-                      ? `Se crearÃ­an ${previewSummary.totalCreateCount} turnos y se omitirÃ­an ${previewSummary.totalSkippedCount}.`
-                      : "CompletÃ¡ el rango y la duraciÃ³n para ver los turnos que se van a crear."}
+                      ? `Se crearían ${previewSummary.totalCreateCount} turnos y se omitirían ${previewSummary.totalSkippedCount}.`
+                      : "Completá el rango y la duración para ver los turnos que se van a crear."}
                   </p>
                 </div>
                 {previewSlots.length ? (
@@ -408,7 +408,7 @@ export function AdminTimeslotsPage() {
                 <>
                   {existingDayTimeslotsQuery.isLoading ? (
                     <div className="mt-3">
-                      <LoadingCard label="Verificando conflictos del dÃ­a..." />
+                      <LoadingCard label="Verificando conflictos del día..." />
                     </div>
                   ) : (
                     <div className="mt-3 space-y-2">
@@ -456,7 +456,7 @@ export function AdminTimeslotsPage() {
 
                   {previewSummary.crossesMidnight ? (
                     <p className="mt-3 text-xs font-medium text-amber-700">
-                      Algunos turnos terminan despuÃ©s de la medianoche del dÃ­a seleccionado.
+                      Algunos turnos terminan después de la medianoche del día seleccionado.
                     </p>
                   ) : null}
                 </>
@@ -497,7 +497,7 @@ export function AdminTimeslotsPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h3 className="text-lg font-bold text-slate-950">Turnos existentes</h3>
-                <p className="text-sm text-slate-500">FiltrÃ¡ por fecha y cancha, luego elegÃ­ uno para editarlo.</p>
+                <p className="text-sm text-slate-500">Filtrá por fecha y cancha, luego elegí uno para editarlo.</p>
               </div>
               <div className="shell-card flex items-center gap-3 px-4 py-3 shadow-none">
                 <CalendarClock className="text-skyline" size={18} />
@@ -534,7 +534,7 @@ export function AdminTimeslotsPage() {
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{court?.name || "Cancha"}</p>
                           <h4 className="mt-1 text-lg font-bold text-slate-950">{dateLabel(timeslot.starts_at)}</h4>
-                          <p className="mt-1 text-sm text-slate-500">Finaliza {dateLabel(timeslot.ends_at)} Â· Capacidad {timeslot.capacity}</p>
+                          <p className="mt-1 text-sm text-slate-500">Finaliza {dateLabel(timeslot.ends_at)} · Capacidad {timeslot.capacity}</p>
                         </div>
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                           <TimerReset size={16} />
@@ -581,7 +581,7 @@ export function AdminTimeslotsPage() {
                   );
                 })
               ) : (
-                <EmptyState title="TodavÃ­a no hay turnos para este filtro" description="PodÃ©s crear un bloque desde la izquierda o cambiar la fecha y la cancha seleccionada." />
+                <EmptyState title="Todavía no hay turnos para este filtro" description="Podés crear un bloque desde la izquierda o cambiar la fecha y la cancha seleccionada." />
               )}
             </div>
           </div>
@@ -590,3 +590,4 @@ export function AdminTimeslotsPage() {
     </>
   );
 }
+

@@ -52,6 +52,12 @@ export function AdminInventoryPage() {
   const [editCourtSportId, setEditCourtSportId] = useState("");
   const [editCourtIndoor, setEditCourtIndoor] = useState("indoor");
   const [editCourtIsActive, setEditCourtIsActive] = useState(true);
+  const [venueSearch, setVenueSearch] = useState("");
+  const [venueSportFilter, setVenueSportFilter] = useState("");
+  const [courtSearch, setCourtSearch] = useState("");
+  const [courtVenueFilter, setCourtVenueFilter] = useState("");
+  const [courtSportFilter, setCourtSportFilter] = useState("");
+  const [courtStatusFilter, setCourtStatusFilter] = useState("all");
 
   const sportsQuery = useQuery({
     queryKey: ["sports"],
@@ -92,6 +98,41 @@ export function AdminInventoryPage() {
     }
     return (sportsQuery.data ?? []).filter((sport) => sport.id === selectedVenue.allowed_sport_id);
   }, [editCourtVenueId, sportsQuery.data, venuesById]);
+
+  const filteredVenues = useMemo(() => {
+    const search = venueSearch.trim().toLowerCase();
+
+    return (venuesQuery.data ?? []).filter((venue) => {
+      const matchesSearch =
+        !search ||
+        venue.name.toLowerCase().includes(search) ||
+        (venue.address ?? "").toLowerCase().includes(search);
+      const matchesSport = !venueSportFilter || venue.allowed_sport_id === venueSportFilter;
+      return matchesSearch && matchesSport;
+    });
+  }, [venueSearch, venueSportFilter, venuesQuery.data]);
+
+  const filteredCourts = useMemo(() => {
+    const search = courtSearch.trim().toLowerCase();
+
+    return (courtsQuery.data ?? []).filter((court) => {
+      const venue = venuesById.get(court.venue_id);
+      const sport = sportsById.get(court.sport_id);
+      const matchesSearch =
+        !search ||
+        court.name.toLowerCase().includes(search) ||
+        (venue?.name ?? "").toLowerCase().includes(search) ||
+        (sport?.name ?? "").toLowerCase().includes(search);
+      const matchesVenue = !courtVenueFilter || court.venue_id === courtVenueFilter;
+      const matchesSport = !courtSportFilter || court.sport_id === courtSportFilter;
+      const matchesStatus =
+        courtStatusFilter === "all" ||
+        (courtStatusFilter === "active" && court.is_active) ||
+        (courtStatusFilter === "inactive" && !court.is_active);
+
+      return matchesSearch && matchesVenue && matchesSport && matchesStatus;
+    });
+  }, [courtSearch, courtSportFilter, courtStatusFilter, courtVenueFilter, courtsQuery.data, sportsById, venuesById]);
 
   function invalidateInventoryQueries() {
     void queryClient.invalidateQueries({ queryKey: ["venues"] });
@@ -499,13 +540,33 @@ export function AdminInventoryPage() {
                 </div>
               </div>
 
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <input
+                  className="field sm:col-span-2"
+                  value={venueSearch}
+                  onChange={(event) => setVenueSearch(event.target.value)}
+                  placeholder="Buscar por nombre o direcci?n"
+                />
+                <select className="field" value={venueSportFilter} onChange={(event) => setVenueSportFilter(event.target.value)}>
+                  <option value="">Todos los deportes</option>
+                  {(sportsQuery.data ?? []).map((sport) => (
+                    <option key={sport.id} value={sport.id}>
+                      {sport.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  {filteredVenues.length} sedes visibles
+                </div>
+              </div>
+
               {inventoryLoading ? (
                 <div className="mt-4">
                   <LoadingCard label="Cargando inventario..." />
                 </div>
-              ) : venuesQuery.data?.length ? (
+              ) : filteredVenues.length ? (
                 <div className="mt-4 space-y-3">
-                  {venuesQuery.data.map((venue) => {
+                  {filteredVenues.map((venue) => {
                     const isEditing = editingVenueId === venue.id;
                     const sportName = venue.allowed_sport_id ? sportsById.get(venue.allowed_sport_id)?.name ?? "Deporte" : "Todos los deportes";
                     const attachedCourts = (courtsQuery.data ?? []).filter((court) => court.venue_id === venue.id).length;
@@ -593,13 +654,46 @@ export function AdminInventoryPage() {
                 </div>
               </div>
 
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <input
+                  className="field sm:col-span-2 xl:col-span-4"
+                  value={courtSearch}
+                  onChange={(event) => setCourtSearch(event.target.value)}
+                  placeholder="Buscar por cancha, sede o deporte"
+                />
+                <select className="field" value={courtVenueFilter} onChange={(event) => setCourtVenueFilter(event.target.value)}>
+                  <option value="">Todas las sedes</option>
+                  {(venuesQuery.data ?? []).map((venue) => (
+                    <option key={venue.id} value={venue.id}>
+                      {venue.name}
+                    </option>
+                  ))}
+                </select>
+                <select className="field" value={courtSportFilter} onChange={(event) => setCourtSportFilter(event.target.value)}>
+                  <option value="">Todos los deportes</option>
+                  {(sportsQuery.data ?? []).map((sport) => (
+                    <option key={sport.id} value={sport.id}>
+                      {sport.name}
+                    </option>
+                  ))}
+                </select>
+                <select className="field" value={courtStatusFilter} onChange={(event) => setCourtStatusFilter(event.target.value)}>
+                  <option value="all">Activas e inactivas</option>
+                  <option value="active">Solo activas</option>
+                  <option value="inactive">Solo inactivas</option>
+                </select>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  {filteredCourts.length} canchas visibles
+                </div>
+              </div>
+
               {inventoryLoading ? (
                 <div className="mt-4">
                   <LoadingCard label="Cargando canchas..." />
                 </div>
-              ) : courtsQuery.data?.length ? (
+              ) : filteredCourts.length ? (
                 <div className="mt-4 space-y-3">
-                  {courtsQuery.data.map((court) => {
+                  {filteredCourts.map((court) => {
                     const isEditing = editingCourtId === court.id;
                     const venue = venuesById.get(court.venue_id);
                     const sport = sportsById.get(court.sport_id);
