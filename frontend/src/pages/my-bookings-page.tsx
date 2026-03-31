@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CalendarX2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
 import { EmptyState } from "../components/empty-state";
@@ -8,7 +9,16 @@ import { api } from "../lib/api";
 import { dateLabel } from "../lib/format";
 
 export function MyBookingsPage() {
+  const queryClient = useQueryClient();
   const bookingsQuery = useQuery({ queryKey: ["bookings"], queryFn: api.listBookings });
+
+  const cancelBookingMutation = useMutation({
+    mutationFn: api.cancelBooking,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+    },
+  });
 
   if (bookingsQuery.isLoading) {
     return (
@@ -26,13 +36,13 @@ export function MyBookingsPage() {
         <SectionTitle
           eyebrow="Agenda"
           title="Tus reservas"
-          description="Ahora esta vista consume un payload de reservas enriquecido desde backend, así que la UI puede mostrar la información útil sin reconstruir relaciones del lado cliente."
+          description="Acá podés revisar tu historial, ver el estado de cada reserva y cancelar las que ya no vayas a usar."
         />
 
         {!bookingsQuery.data?.length ? (
           <EmptyState
             title="Todavía no hay reservas"
-            description="Cuando reserves un turno desde Explorar, va a aparecer acá con su cancha y horario."
+            description="Cuando reserves un turno desde Explorar, va a aparecer acá con su cancha, horario y estado."
             action={
               <Link className="btn-primary" to="/explore">
                 Buscar turnos
@@ -46,19 +56,40 @@ export function MyBookingsPage() {
               const court = timeslot.court;
               const sport = court.sport;
               const venue = court.venue;
+              const isCancelled = booking.status === "cancelled";
+              const isCancelling = cancelBookingMutation.isPending && cancelBookingMutation.variables === booking.id;
 
               return (
                 <article key={booking.id} className="shell-card p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-skyline">
-                    {booking.status}
-                  </p>
-                  <h3 className="mt-2 text-xl font-bold text-slate-950">
-                    {court.name} · {sport.name}
-                  </h3>
-                  <p className="mt-2 text-sm text-slate-500">{venue.name}</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-800">
-                    {dateLabel(timeslot.starts_at)}
-                  </p>
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                        <span className={isCancelled ? "text-slate-400" : "text-skyline"}>{booking.status}</span>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-slate-400">{venue.name}</span>
+                      </div>
+                      <h3 className="mt-2 text-xl font-bold text-slate-950">
+                        {court.name} · {sport.name}
+                      </h3>
+                      <p className="mt-2 text-sm text-slate-500">{dateLabel(timeslot.starts_at)}</p>
+                    </div>
+
+                    {isCancelled ? (
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Cancelada
+                      </span>
+                    ) : (
+                      <button
+                        className="btn-secondary text-rose-700"
+                        type="button"
+                        onClick={() => cancelBookingMutation.mutate(booking.id)}
+                        disabled={isCancelling}
+                      >
+                        <CalendarX2 size={16} />
+                        {isCancelling ? "Cancelando..." : "Cancelar reserva"}
+                      </button>
+                    )}
+                  </div>
                 </article>
               );
             })}

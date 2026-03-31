@@ -1,8 +1,7 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import AUTH_ERROR_DETAIL
@@ -19,6 +18,8 @@ router = APIRouter(prefix="/bookings", tags=["bookings"])
 BOOKING_NOT_AVAILABLE_DETAIL = "Turno no disponible"
 BOOKING_FULL_DETAIL = "El turno ya está completo"
 BOOKING_DUPLICATE_DETAIL = "Ya reservaste este turno"
+BOOKING_NOT_FOUND_DETAIL = "Reserva no encontrada"
+BOOKING_ALREADY_CANCELLED_DETAIL = "La reserva ya estaba cancelada"
 
 
 def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
@@ -28,18 +29,41 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
         raise HTTPException(status_code=401, detail=AUTH_ERROR_DETAIL)
 
 
+def count_confirmed_bookings(db: Session, timeslot_id: str) -> int:
+    return db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.timeslot_id == timeslot_id,
+            Booking.status == "confirmed",
+        )
+    ).scalar_one()
+
+
 @router.post("", response_model=BookingPublic, status_code=201)
 def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     timeslot: TimeSlot | None = db.get(TimeSlot, payload.timeslot_id)
     if not timeslot or not timeslot.is_active:
         raise HTTPException(status_code=404, detail=BOOKING_NOT_AVAILABLE_DETAIL)
 
-    confirmed = db.execute(
-        select(func.count(Booking.id)).where(Booking.timeslot_id == timeslot.id, Booking.status == "confirmed")
-    ).scalar_one()
+    existing_booking = db.execute(
+        select(Booking).where(
+            Booking.user_id == user_id,
+            Booking.timeslot_id == timeslot.id,
+        )
+    ).scalar_one_or_none()
 
+    if existing_booking and existing_booking.status == "confirmed":
+        raise HTTPException(status_code=409, detail=BOOKING_DUPLICATE_DETAIL)
+
+    confirmed = count_confirmed_bookings(db, timeslot.id)
     if confirmed >= timeslot.capacity:
         raise HTTPException(status_code=409, detail=BOOKING_FULL_DETAIL)
+
+    if existing_booking and existing_booking.status == "cancelled":
+        existing_booking.status = "confirmed"
+        existing_booking.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing_booking)
+        return existing_booking
 
     booking = Booking(
         user_id=user_id,
@@ -49,12 +73,7 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
         updated_at=datetime.now(timezone.utc),
     )
     db.add(booking)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=409, detail=BOOKING_DUPLICATE_DETAIL)
-
+    db.commit()
     db.refresh(booking)
     return booking
 
@@ -68,6 +87,28 @@ def list_bookings(db: Session = Depends(get_db), user_id: str = Depends(get_curr
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
         )
         .where(Booking.user_id == user_id)
-        .order_by(Booking.created_at.desc())
+        .order_by(Booking.updated_at.desc(), Booking.created_at.desc())
     ).scalars().all()
     return bookings
+
+
+@router.patch("/{booking_id}/cancel", response_model=BookingPublic)
+def cancel_booking(booking_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    booking = db.execute(
+        select(Booking).where(
+            Booking.id == booking_id,
+            Booking.user_id == user_id,
+        )
+    ).scalar_one_or_none()
+
+    if not booking:
+        raise HTTPException(status_code=404, detail=BOOKING_NOT_FOUND_DETAIL)
+
+    if booking.status == "cancelled":
+        raise HTTPException(status_code=409, detail=BOOKING_ALREADY_CANCELLED_DETAIL)
+
+    booking.status = "cancelled"
+    booking.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(booking)
+    return booking

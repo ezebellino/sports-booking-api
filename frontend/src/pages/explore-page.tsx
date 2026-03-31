@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Calendar1,
   CheckCircle2,
@@ -82,6 +82,7 @@ export function ExplorePage() {
     onSuccess: () => {
       setFeedback("Reserva confirmada. Ya la podés ver en Mis reservas.");
       void queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
     onError: (error) => {
       setFeedback(error instanceof Error ? error.message : "No pudimos crear la reserva");
@@ -215,9 +216,7 @@ export function ExplorePage() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-bold">{venue.name}</p>
-                          <p className="mt-1 text-sm opacity-80">
-                            {venue.address || "Dirección pendiente"}
-                          </p>
+                          <p className="mt-1 text-sm opacity-80">{venue.address || "Dirección pendiente"}</p>
                         </div>
                         {selectedVenueId === venue.id ? <CheckCircle2 size={18} /> : null}
                       </div>
@@ -294,16 +293,12 @@ export function ExplorePage() {
 
                           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                             <div>
-                              <h3 className="text-lg font-bold text-slate-950">
-                                {court?.name || "Cancha"}
-                              </h3>
+                              <h3 className="text-lg font-bold text-slate-950">{court?.name || "Cancha"}</h3>
                               <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
                                 <Clock3 size={16} />
                                 <span>{dateLabel(slot.starts_at)}</span>
                               </div>
-                              <p className="mt-2 text-base font-semibold text-slate-900">
-                                {currency(slot.price)}
-                              </p>
+                              <p className="mt-2 text-base font-semibold text-slate-900">{currency(slot.price)}</p>
                             </div>
 
                             {isAuthenticated ? (
@@ -329,7 +324,7 @@ export function ExplorePage() {
               ) : (
                 <EmptyState
                   title="Sin turnos para esa fecha"
-                  description="Probá con otra fecha o cargá más timeslots desde el backend."
+                  description="Probá con otra fecha o cargá más turnos desde el panel admin."
                 />
               )}
             </section>

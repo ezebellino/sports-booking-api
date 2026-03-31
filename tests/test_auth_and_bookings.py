@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+﻿from datetime import datetime, timedelta, timezone
 
 from app.models.court import Court
 from app.models.sport import Sport
@@ -31,7 +31,7 @@ def register_and_login(client, email: str, password: str, full_name: str = "Test
 
 
 def seed_timeslot(db_session, *, capacity: int = 1) -> TimeSlot:
-    sport = Sport(name="Padel", description="Partidos rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡pidos")
+    sport = Sport(name="Padel", description="Partidos rápidos")
     db_session.add(sport)
     db_session.flush()
 
@@ -404,3 +404,93 @@ def test_admin_delete_blocks_for_related_courts_and_timeslots(client, db_session
     )
     assert delete_venue_response.status_code == 409
     assert delete_venue_response.json()["detail"] == "No se puede eliminar una sede con canchas asociadas"
+
+
+def test_booking_can_be_cancelled_and_list_reflects_status(client, db_session):
+    access_token = register_and_login(client, "cancel@example.com", "password123", "Cancel User")
+    timeslot = seed_timeslot(db_session, capacity=2)
+
+    create_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert create_response.status_code == 201
+    booking_id = create_response.json()["id"]
+
+    cancel_response = client.patch(
+        f"/bookings/{booking_id}/cancel",
+        headers=auth_headers(access_token),
+    )
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "cancelled"
+
+    list_response = client.get("/bookings", headers=auth_headers(access_token))
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["status"] == "cancelled"
+
+
+def test_cancelled_booking_frees_capacity_and_can_be_reconfirmed(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=1)
+
+    first_user_token = register_and_login(client, "cancel-first@example.com", "password123", "Cancel First")
+    second_user_token = register_and_login(client, "cancel-second@example.com", "password123", "Cancel Second")
+
+    first_booking = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(first_user_token),
+    )
+    assert first_booking.status_code == 201
+    booking_id = first_booking.json()["id"]
+
+    cancel_response = client.patch(
+        f"/bookings/{booking_id}/cancel",
+        headers=auth_headers(first_user_token),
+    )
+    assert cancel_response.status_code == 200
+
+    second_booking = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(second_user_token),
+    )
+    assert second_booking.status_code == 201
+
+    reconfirm_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(first_user_token),
+    )
+    assert reconfirm_response.status_code == 409
+    assert reconfirm_response.json()["detail"] == "El turno ya está completo"
+
+
+def test_same_user_can_reconfirm_cancelled_booking_when_slot_is_available(client, db_session):
+    access_token = register_and_login(client, "reconfirm@example.com", "password123", "Reconfirm User")
+    timeslot = seed_timeslot(db_session, capacity=1)
+
+    first_booking = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert first_booking.status_code == 201
+    booking_id = first_booking.json()["id"]
+
+    cancel_response = client.patch(
+        f"/bookings/{booking_id}/cancel",
+        headers=auth_headers(access_token),
+    )
+    assert cancel_response.status_code == 200
+
+    reconfirm_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert reconfirm_response.status_code == 201
+    assert reconfirm_response.json()["id"] == booking_id
+    assert reconfirm_response.json()["status"] == "confirmed"
+
+

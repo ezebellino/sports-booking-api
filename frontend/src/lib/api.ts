@@ -1,4 +1,4 @@
-import { clearTokens, getStoredTokens, storeTokens } from "./storage";
+﻿import { clearTokens, getStoredTokens, storeTokens } from "./storage";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
 
@@ -53,7 +53,7 @@ export type Booking = {
   id: string;
   user_id: string;
   timeslot_id: string;
-  status: string;
+  status: "confirmed" | "cancelled";
   created_at: string;
   updated_at: string;
 };
@@ -311,5 +311,11 @@ export const api = {
       auth: true,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ timeslot_id: timeslotId }),
+    }),
+
+  cancelBooking: (bookingId: string) =>
+    request<Booking>(`/bookings/${bookingId}/cancel`, {
+      method: "PATCH",
+      auth: true,
     }),
 };
