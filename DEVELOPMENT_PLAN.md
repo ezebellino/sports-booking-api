@@ -9,8 +9,8 @@ Build a mobile-first sports booking experience that lets a user register, browse
 - Local auth flow with persistent session and booking UI.
 - CORS enabled for local frontend development.
 - Role model with `admin` and `user`.
-- Admin timeslot module with bulk generation, inline editing, duplicate-aware preview, and richer availability signals.
-- Automated backend coverage for auth, booking, cancellations, occupancy, and admin timeslot generation.
+- Admin timeslot module with bulk generation, inline editing, duplicate-aware preview, richer availability signals, and explicit timezone context.
+- Automated backend coverage for auth, booking, cancellations, occupancy, domain safety, and admin timeslot generation.
 
 ## Guiding Principles
 - Keep the user flow mobile-first from day one.
@@ -96,30 +96,18 @@ Objective: move from "usable admin slice" to "operable platform" for real daily 
 - Task A2: Admin filtering improved across inventory and timeslots.
 - Task B1: Cancellation flow added with status history and capacity release.
 - Task B2: Explore now surfaces occupancy, remaining spots, and full / few spots left states.
+- Task C1: Booking and admin flows now block inactive courts, started slots, invalid bulk creation, and unsafe capacity reductions.
+- Task C2: Timezone context is explicit in user and admin views.
 
 ### Remaining
-
-#### Track C: Domain Safety
-Priority: P2
-
-Task C1: Add safer validation for inactive and expired resources.
-- Prevent booking on inactive courts and expired timeslots consistently.
-- Ensure admin edits do not create invalid states silently.
-Done when:
-- Invalid operational states are blocked with readable errors.
-
-Task C2: Improve timezone clarity.
-- Make venue-local time explicit in admin and user views.
-- Avoid confusion around late-night slots and UTC serialization.
-Done when:
-- Operators and users interpret displayed schedules the same way.
+- Sprint 02 core goals are complete.
 
 ## Recommended Next Task
-Start with Sprint 02 / Track C / Task C1: add safer validation for inactive and expired resources.
+Start with Phase 4 / Booking policies and cancellation windows.
 Reason:
-- It closes a domain safety gap now that reservation and admin flows are already more complete.
-- It aligns backend rules with the new availability signals shown in Explore.
-- It prevents confusing edge cases before we move into booking policies and monetization.
+- The core booking and admin experience is already coherent enough to support real policy rules.
+- Cancellation now existe, así que el siguiente paso natural es decidir cuándo se permite y bajo qué condiciones.
+- Eso deja una base limpia para pagos, notificaciones y operación real del complejo.
 
 ## Definition of Done for Each Iteration
 - The flow works end-to-end locally.
@@ -128,4 +116,3 @@ Reason:
 - Backend tests pass when backend behavior changed.
 - Visible strings are checked for UTF-8 correctness.
 - Changes are committed with a clear message.
-

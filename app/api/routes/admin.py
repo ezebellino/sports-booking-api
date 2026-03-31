@@ -1,4 +1,4 @@
-from datetime import timedelta
+﻿from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -12,6 +12,8 @@ from app.schemas.timeslot import TimeSlotBulkCreate, TimeSlotBulkCreateResult, T
 from app.schemas.user import UserPublic
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+INACTIVE_COURT_BULK_DETAIL = "No se pueden generar turnos sobre canchas inactivas"
 
 
 @router.get("/users", response_model=list[UserPublic])
@@ -40,13 +42,19 @@ def bulk_create_timeslots(
             detail=f"court_id not found: {', '.join(missing_court_ids)}",
         )
 
+    inactive_courts = [court.name for court in courts if not court.is_active and payload.is_active]
+    if inactive_courts:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{INACTIVE_COURT_BULK_DETAIL}: {', '.join(inactive_courts)}",
+        )
+
     created_slots: list[TimeSlot] = []
     skipped_reasons: list[str] = []
     step = timedelta(minutes=payload.slot_minutes)
 
     for court in courts:
         current_start = payload.window_starts_at
-        # "Hasta" define el último horario de inicio permitido, no el fin del último turno.
         while current_start < payload.window_ends_at:
             current_end = current_start + step
 
@@ -85,6 +93,6 @@ def bulk_create_timeslots(
     return TimeSlotBulkCreateResult(
         created_count=len(created_slots),
         skipped_count=len(skipped_reasons),
-        created_slots=created_slots,
+        created_slots=[TimeSlotPublic.model_validate(timeslot) for timeslot in created_slots],
         skipped_reasons=skipped_reasons,
     )

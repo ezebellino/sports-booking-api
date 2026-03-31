@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import require_admin
 from app.db.session import get_db
@@ -14,6 +14,11 @@ from app.schemas.timeslot import TimeSlotCreate, TimeSlotPublic, TimeSlotUpdate
 
 router = APIRouter(prefix="/timeslots", tags=["timeslots"])
 
+COURT_NOT_FOUND_DETAIL = "Cancha no encontrada"
+INACTIVE_COURT_TIMESLOT_DETAIL = "No se pueden crear o activar turnos sobre una cancha inactiva"
+TIMESLOT_NOT_FOUND_DETAIL = "Turno no encontrado"
+TIMESLOT_CAPACITY_CONFLICT_DETAIL = "La capacidad no puede quedar por debajo de las reservas confirmadas"
+
 
 def serialize_timeslot(timeslot: TimeSlot, confirmed_bookings: int) -> TimeSlotPublic:
     remaining_spots = max(timeslot.capacity - confirmed_bookings, 0)
@@ -21,7 +26,7 @@ def serialize_timeslot(timeslot: TimeSlot, confirmed_bookings: int) -> TimeSlotP
 
     if not timeslot.is_active or not timeslot.court.is_active:
         availability_status = "inactive"
-    elif timeslot.ends_at <= now:
+    elif timeslot.starts_at <= now:
         availability_status = "expired"
     elif remaining_spots <= 0:
         availability_status = "full"
@@ -46,6 +51,17 @@ def serialize_timeslot(timeslot: TimeSlot, confirmed_bookings: int) -> TimeSlotP
     )
 
 
+def count_confirmed_bookings(db: Session, timeslot_id) -> int:
+    return int(
+        db.execute(
+            select(func.count(Booking.id)).where(
+                Booking.timeslot_id == timeslot_id,
+                Booking.status == "confirmed",
+            )
+        ).scalar_one()
+    )
+
+
 @router.post("", response_model=TimeSlotPublic, status_code=201)
 def create_timeslot(
     payload: TimeSlotCreate,
@@ -54,7 +70,9 @@ def create_timeslot(
 ):
     court = db.get(Court, payload.court_id)
     if not court:
-        raise HTTPException(400, "court_id not found")
+        raise HTTPException(status_code=400, detail=COURT_NOT_FOUND_DETAIL)
+    if not court.is_active and payload.is_active:
+        raise HTTPException(status_code=409, detail=INACTIVE_COURT_TIMESLOT_DETAIL)
 
     timeslot = TimeSlot(
         court_id=payload.court_id,
@@ -95,6 +113,7 @@ def list_timeslots(
         db.query(TimeSlot, func.coalesce(confirmed_bookings_subquery.c.confirmed_bookings, 0).label("confirmed_bookings"))
         .join(Court, Court.id == TimeSlot.court_id)
         .outerjoin(confirmed_bookings_subquery, confirmed_bookings_subquery.c.timeslot_id == TimeSlot.id)
+        .options(joinedload(TimeSlot.court))
     )
 
     if court_id:
@@ -115,24 +134,29 @@ def update_timeslot(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    timeslot = db.get(TimeSlot, timeslot_id)
+    timeslot = db.execute(
+        select(TimeSlot)
+        .options(joinedload(TimeSlot.court))
+        .where(TimeSlot.id == timeslot_id)
+    ).scalar_one_or_none()
     if not timeslot:
-        raise HTTPException(404, "TimeSlot not found")
+        raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
+
+    confirmed_bookings = count_confirmed_bookings(db, timeslot.id)
+    next_capacity = payload.capacity if payload.capacity is not None else timeslot.capacity
+    next_is_active = payload.is_active if payload.is_active is not None else timeslot.is_active
+
+    if next_capacity < confirmed_bookings:
+        raise HTTPException(status_code=409, detail=TIMESLOT_CAPACITY_CONFLICT_DETAIL)
+    if not timeslot.court.is_active and next_is_active:
+        raise HTTPException(status_code=409, detail=INACTIVE_COURT_TIMESLOT_DETAIL)
 
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(timeslot, field, value)
 
     db.commit()
     db.refresh(timeslot)
-
-    confirmed_bookings = db.execute(
-        select(func.count(Booking.id)).where(
-            Booking.timeslot_id == timeslot.id,
-            Booking.status == "confirmed",
-        )
-    ).scalar_one()
-
-    return serialize_timeslot(timeslot, int(confirmed_bookings))
+    return serialize_timeslot(timeslot, confirmed_bookings)
 
 
 @router.delete("/{timeslot_id}", status_code=204)
@@ -143,7 +167,7 @@ def delete_timeslot(
 ):
     timeslot = db.get(TimeSlot, timeslot_id)
     if not timeslot:
-        raise HTTPException(404, "TimeSlot not found")
+        raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
 
     db.delete(timeslot)
     db.commit()

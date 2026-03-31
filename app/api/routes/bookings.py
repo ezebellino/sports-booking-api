@@ -20,6 +20,8 @@ BOOKING_FULL_DETAIL = "El turno ya está completo"
 BOOKING_DUPLICATE_DETAIL = "Ya reservaste este turno"
 BOOKING_NOT_FOUND_DETAIL = "Reserva no encontrada"
 BOOKING_ALREADY_CANCELLED_DETAIL = "La reserva ya estaba cancelada"
+BOOKING_EXPIRED_DETAIL = "El turno ya no admite reservas"
+BOOKING_INACTIVE_COURT_DETAIL = "La cancha está inactiva"
 
 
 def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
@@ -40,9 +42,21 @@ def count_confirmed_bookings(db: Session, timeslot_id: str) -> int:
 
 @router.post("", response_model=BookingPublic, status_code=201)
 def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
-    timeslot: TimeSlot | None = db.get(TimeSlot, payload.timeslot_id)
+    timeslot = db.execute(
+        select(TimeSlot)
+        .options(joinedload(TimeSlot.court))
+        .where(TimeSlot.id == payload.timeslot_id)
+    ).scalar_one_or_none()
+
     if not timeslot or not timeslot.is_active:
         raise HTTPException(status_code=404, detail=BOOKING_NOT_AVAILABLE_DETAIL)
+
+    now = datetime.now(timezone.utc)
+    if timeslot.starts_at <= now:
+        raise HTTPException(status_code=409, detail=BOOKING_EXPIRED_DETAIL)
+
+    if not timeslot.court.is_active:
+        raise HTTPException(status_code=409, detail=BOOKING_INACTIVE_COURT_DETAIL)
 
     existing_booking = db.execute(
         select(Booking).where(

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+﻿import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, CalendarRange, Map, ShieldCheck, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
@@ -53,9 +53,7 @@ export function HomePage() {
             <LoadingCard label="Cargando accesos rápidos..." />
           ) : (
             <div className="shell-card p-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                Deporte primero
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Deporte primero</p>
               <h3 className="mt-2 text-xl font-bold text-slate-950">Accesos rápidos</h3>
               <div className="mt-4 flex flex-wrap gap-2">
                 {sportsQuery.data?.slice(0, 6).map((sport) => (
@@ -68,13 +66,11 @@ export function HomePage() {
           )}
 
           <div className="shell-card p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Qué podés hacer
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Qué podés hacer</p>
             <ul className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
               <li>Entrar con tu cuenta y mantener la sesión activa.</li>
               <li>Explorar por sede, cancha y fecha con un flujo simple.</li>
-              <li>Reservar turnos y revisar tu agenda personal.</li>
+              <li>Reservar turnos y revisar tu agenda personal con la hora local de cada sede.</li>
               <li>{isAdmin ? "Administrar turnos masivos, edición y control por cancha." : "Ver el panel admin cuando tu rol tenga permisos."}</li>
             </ul>
           </div>
@@ -90,10 +86,9 @@ export function HomePage() {
           />
         </div>
         <div className="shell-card p-6">
-          <p className="text-sm font-semibold text-slate-700">Base técnica actual</p>
+          <p className="text-sm font-semibold text-slate-700">Operación clara</p>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            React + Vite + TypeScript + Tailwind + React Query. Rápido para iterar,
-            claro para mantener y cómodo para seguir creciendo.
+            La app ya muestra disponibilidad, historial y referencia horaria por sede para reducir errores de operación y reservas.
           </p>
         </div>
       </section>

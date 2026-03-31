@@ -20,7 +20,7 @@ import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api, type TimeSlot } from "../lib/api";
-import { currency, dateInputDefault, dateLabel, localDateBounds } from "../lib/format";
+import { currency, dateInputDefault, dateLabel, localDateBounds, timeZoneSummary } from "../lib/format";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function ExplorePage() {
@@ -121,7 +121,7 @@ export function ExplorePage() {
         <SectionTitle
           eyebrow="Explorar"
           title="Elegí deporte, sede y horario"
-          description="El flujo está ordenado para celular: primero el deporte, después la sede, luego la cancha y por último los turnos disponibles para la fecha elegida."
+          description="El flujo está ordenado para celular: primero el deporte, después la sede, luego la cancha y por último los turnos disponibles para la fecha elegida. Los horarios se muestran en la hora local de cada sede."
           action={
             <div className="shell-card flex items-center gap-3 px-4 py-3">
               <Calendar1 className="text-skyline" size={18} />
@@ -305,9 +305,9 @@ export function ExplorePage() {
                               <h3 className="text-lg font-bold text-slate-950">{court?.name || "Cancha"}</h3>
                               <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
                                 <Clock3 size={16} />
-                                <span>{dateLabel(slot.starts_at)}</span>
+                                <span>{dateLabel(slot.starts_at, venue?.timezone)}</span>
                               </div>
-                              <p className="mt-2 text-sm text-slate-500">{availabilityMessage(slot)}</p>
+                              <p className="mt-2 text-sm text-slate-500">{availabilityMessage(slot)}</p>`r`n                              <p className="mt-1 text-xs font-medium text-slate-400">Hora local de la sede: {timeZoneSummary(venue?.timezone)}</p>
                               <p className="mt-2 text-base font-semibold text-slate-900">{currency(slot.price)}</p>
                             </div>
 
@@ -469,3 +469,4 @@ function buttonLabel(slot: TimeSlot) {
       return "Reservar";
   }
 }
+

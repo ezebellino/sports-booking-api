@@ -552,3 +552,131 @@ def test_timeslot_list_updates_availability_after_cancellation(client, db_sessio
     assert refreshed_response.status_code == 200
     assert refreshed_response.json()[0]["availability_status"] == "few_left"
     assert refreshed_response.json()[0]["remaining_spots"] == 1
+
+
+def test_booking_rejects_inactive_court_and_expired_timeslot(client, db_session):
+    access_token = register_and_login(client, "domain-safety@example.com", "password123", "Domain Safety")
+
+    timeslot = seed_timeslot(db_session, capacity=2)
+    timeslot.court.is_active = False
+    db_session.commit()
+
+    inactive_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert inactive_response.status_code == 409
+    assert inactive_response.json()["detail"] == "La cancha está inactiva"
+
+    timeslot.court.is_active = True
+    timeslot.starts_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    timeslot.ends_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+    db_session.commit()
+
+    expired_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert expired_response.status_code == 409
+    assert expired_response.json()["detail"] == "El turno ya no admite reservas"
+
+
+def test_timeslot_create_and_bulk_block_inactive_courts(client, db_session):
+    seed = seed_timeslot(db_session, capacity=2)
+    seed.court.is_active = False
+    db_session.commit()
+
+    register_and_login(client, "inactive-court-admin@example.com", "password123", "Inactive Court Admin")
+    admin_user = db_session.query(User).filter(User.email == "inactive-court-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "inactive-court-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    single_response = client.post(
+        "/timeslots",
+        json={
+            "court_id": str(seed.court_id),
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
+            "ends_at": (datetime.now(timezone.utc) + timedelta(days=3, hours=1)).isoformat(),
+            "capacity": 2,
+            "price": 15000,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert single_response.status_code == 409
+    assert single_response.json()["detail"] == "No se pueden crear o activar turnos sobre una cancha inactiva"
+
+    base_day = datetime.now(timezone.utc).replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=4)
+    bulk_response = client.post(
+        "/admin/timeslots/bulk",
+        json={
+            "court_ids": [str(seed.court_id)],
+            "window_starts_at": base_day.isoformat(),
+            "window_ends_at": (base_day + timedelta(hours=2)).isoformat(),
+            "slot_minutes": 60,
+            "capacity": 4,
+            "price": 18000,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert bulk_response.status_code == 409
+    assert bulk_response.json()["detail"] == "No se pueden generar turnos sobre canchas inactivas: Cancha 1"
+
+
+def test_timeslot_update_blocks_capacity_below_confirmed_bookings(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=3)
+
+    first_user_token = register_and_login(client, "capacity-lock-1@example.com", "password123", "Capacity Lock 1")
+    second_user_token = register_and_login(client, "capacity-lock-2@example.com", "password123", "Capacity Lock 2")
+
+    first_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(first_user_token),
+    )
+    assert first_response.status_code == 201
+
+    second_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(second_user_token),
+    )
+    assert second_response.status_code == 201
+
+    register_and_login(client, "capacity-admin@example.com", "password123", "Capacity Admin")
+    admin_user = db_session.query(User).filter(User.email == "capacity-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "capacity-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    update_response = client.patch(
+        f"/timeslots/{timeslot.id}",
+        json={"capacity": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert update_response.status_code == 409
+    assert update_response.json()["detail"] == "La capacidad no puede quedar por debajo de las reservas confirmadas"
+
+
+def test_timeslot_list_marks_started_slot_as_expired(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=2)
+    timeslot.starts_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    timeslot.ends_at = datetime.now(timezone.utc) + timedelta(minutes=50)
+    db_session.commit()
+
+    timeslots_response = client.get(f"/timeslots?court_id={timeslot.court_id}&limit=100")
+    assert timeslots_response.status_code == 200
+    assert timeslots_response.json()[0]["availability_status"] == "expired"
+

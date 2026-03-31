@@ -6,7 +6,7 @@ import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api } from "../lib/api";
-import { dateLabel } from "../lib/format";
+import { dateLabel, timeZoneSummary } from "../lib/format";
 
 export function MyBookingsPage() {
   const queryClient = useQueryClient();
@@ -36,7 +36,7 @@ export function MyBookingsPage() {
         <SectionTitle
           eyebrow="Agenda"
           title="Tus reservas"
-          description="Acá podés revisar tu historial, ver el estado de cada reserva y cancelar las que ya no vayas a usar."
+          description="Acá podés revisar tu historial, ver el estado de cada reserva y cancelar las que ya no vayas a usar. Los horarios se muestran en la hora local de cada sede."
         />
 
         {!bookingsQuery.data?.length ? (
@@ -71,7 +71,8 @@ export function MyBookingsPage() {
                       <h3 className="mt-2 text-xl font-bold text-slate-950">
                         {court.name} · {sport.name}
                       </h3>
-                      <p className="mt-2 text-sm text-slate-500">{dateLabel(timeslot.starts_at)}</p>
+                      <p className="mt-2 text-sm text-slate-500">{dateLabel(timeslot.starts_at, venue.timezone)}</p>
+                      <p className="mt-1 text-xs font-medium text-slate-400">Hora local de la sede: {timeZoneSummary(venue.timezone)}</p>
                     </div>
 
                     {isCancelled ? (

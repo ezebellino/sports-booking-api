@@ -16,7 +16,13 @@ import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api, type TimeSlot } from "../lib/api";
-import { dateInputDefault, dateLabel, localDateBounds } from "../lib/format";
+import {
+  dateInputDefault,
+  dateLabel,
+  localDateBounds,
+  timeOnlyLabel,
+  timeZoneSummary,
+} from "../lib/format";
 
 function toLocalDateTimeInput(iso: string) {
   const date = new Date(iso);
@@ -145,7 +151,9 @@ export function AdminTimeslotsPage() {
       setFilterCourtId("");
     }
 
-    setBulkCourtIds((current) => current.filter((courtId) => filteredCourts.some((court) => court.id === courtId)));
+    setBulkCourtIds((current) =>
+      current.filter((courtId) => filteredCourts.some((court) => court.id === courtId)),
+    );
   }, [filterCourtId, filteredCourts]);
 
   const previewSlots = useMemo(() => {
@@ -220,6 +228,21 @@ export function AdminTimeslotsPage() {
     };
   }, [bulkCourtIds, courtsById, existingDayTimeslotsQuery.data, previewSlots, selectedDate]);
 
+  const selectedVenue = filterVenueId ? venuesById.get(filterVenueId) ?? null : null;
+
+  const selectedBulkTimezones = useMemo(() => {
+    return Array.from(
+      new Set(
+        bulkCourtIds
+          .map((courtId) => courtsById.get(courtId))
+          .map((court) => (court ? venuesById.get(court.venue_id)?.timezone ?? null : null))
+          .filter((timezone): timezone is string => Boolean(timezone)),
+      ),
+    );
+  }, [bulkCourtIds, courtsById, venuesById]);
+
+  const previewTimeZone = selectedBulkTimezones.length === 1 ? selectedBulkTimezones[0] : null;
+
   const visibleTimeslots = useMemo(() => {
     const allowedCourtIds = new Set(filteredCourts.map((court) => court.id));
 
@@ -239,9 +262,7 @@ export function AdminTimeslotsPage() {
     onSuccess: (result) => {
       setBulkError(null);
       setEditSuccess(null);
-      setBulkSuccess(
-        `Se crearon ${result.created_count} turnos y se omitieron ${result.skipped_count}.`,
-      );
+      setBulkSuccess(`Se crearon ${result.created_count} turnos y se omitieron ${result.skipped_count}.`);
       void queryClient.invalidateQueries({ queryKey: ["admin-timeslots"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-timeslots-preview"] });
       void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
@@ -420,13 +441,7 @@ export function AdminTimeslotsPage() {
               <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-date">
                 Día
               </label>
-              <input
-                id="bulk-date"
-                className="field"
-                type="date"
-                value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
-              />
+              <input id="bulk-date" className="field" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
             </div>
 
             <div>
@@ -520,6 +535,14 @@ export function AdminTimeslotsPage() {
 
               {previewSlots.length ? (
                 <>
+                  <p className="mt-3 text-xs font-medium text-slate-500">
+                    {previewTimeZone
+                      ? `Vista previa en hora local de la sede: ${timeZoneSummary(previewTimeZone)}.`
+                      : selectedBulkTimezones.length > 1
+                        ? "Las canchas elegidas pertenecen a distintas zonas horarias. Revisá la sede antes de confirmar."
+                        : "Seleccioná una cancha para ver la referencia horaria de la sede."}
+                  </p>
+
                   {existingDayTimeslotsQuery.isLoading ? (
                     <div className="mt-3">
                       <LoadingCard label="Verificando conflictos del día..." />
@@ -527,24 +550,17 @@ export function AdminTimeslotsPage() {
                   ) : (
                     <div className="mt-3 space-y-2">
                       {previewSummary.rows.map((slot) => (
-                        <div
-                          key={slot.startsAt}
-                          className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm"
-                        >
+                        <div key={slot.startsAt} className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="font-semibold text-slate-800">
-                              {dateLabel(slot.startsAt).split(", ").pop()} - {dateLabel(slot.endsAt).split(", ").pop()}
+                              {timeOnlyLabel(slot.startsAt, previewTimeZone)} - {timeOnlyLabel(slot.endsAt, previewTimeZone)}
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs font-semibold">
                               {slot.createCount ? (
-                                <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
-                                  Crear {slot.createCount}
-                                </span>
+                                <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">Crear {slot.createCount}</span>
                               ) : null}
                               {slot.skippedCount ? (
-                                <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">
-                                  Omitir {slot.skippedCount}
-                                </span>
+                                <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">Omitir {slot.skippedCount}</span>
                               ) : null}
                             </div>
                           </div>
@@ -554,9 +570,7 @@ export function AdminTimeslotsPage() {
                               <span
                                 key={`${slot.startsAt}-${courtStatus.courtId}`}
                                 className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                  courtStatus.exists
-                                    ? "bg-amber-50 text-amber-700"
-                                    : "bg-emerald-50 text-emerald-700"
+                                  courtStatus.exists ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"
                                 }`}
                               >
                                 {courtStatus.courtName}: {courtStatus.exists ? "ya existe" : "se crea"}
@@ -611,7 +625,14 @@ export function AdminTimeslotsPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h3 className="text-lg font-bold text-slate-950">Turnos existentes</h3>
-                <p className="text-sm text-slate-500">Usá los filtros superiores para bajar de deporte a sede y después elegir la cancha exacta que querés revisar.</p>
+                <p className="text-sm text-slate-500">
+                  Usá los filtros superiores para bajar de deporte a sede y después elegir la cancha exacta que querés revisar.
+                </p>
+                {selectedVenue ? (
+                  <p className="mt-2 text-xs font-medium text-slate-400">
+                    Horario local de la sede: {selectedVenue.name} · {timeZoneSummary(selectedVenue.timezone)}
+                  </p>
+                ) : null}
               </div>
               <div className="shell-card flex items-center gap-3 px-4 py-3 shadow-none">
                 <CalendarClock className="text-skyline" size={18} />
@@ -626,7 +647,9 @@ export function AdminTimeslotsPage() {
               <select id="timeslot-court-filter" className="field" value={filterCourtId} onChange={(event) => setFilterCourtId(event.target.value)}>
                 <option value="">Todas las canchas</option>
                 {filteredCourts.map((court) => (
-                  <option key={court.id} value={court.id}>{court.name}</option>
+                  <option key={court.id} value={court.id}>
+                    {court.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -640,6 +663,7 @@ export function AdminTimeslotsPage() {
               ) : timeslotsQuery.data?.length ? (
                 visibleTimeslots.map((timeslot) => {
                   const court = courtsById.get(timeslot.court_id);
+                  const venue = court ? venuesById.get(court.venue_id) : null;
                   const isEditing = editingTimeSlotId === timeslot.id;
 
                   return (
@@ -647,8 +671,13 @@ export function AdminTimeslotsPage() {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{court?.name || "Cancha"}</p>
-                          <h4 className="mt-1 text-lg font-bold text-slate-950">{dateLabel(timeslot.starts_at)}</h4>
-                          <p className="mt-1 text-sm text-slate-500">Finaliza {dateLabel(timeslot.ends_at)} · Capacidad {timeslot.capacity}</p>
+                          <h4 className="mt-1 text-lg font-bold text-slate-950">{dateLabel(timeslot.starts_at, venue?.timezone)}</h4>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Finaliza {dateLabel(timeslot.ends_at, venue?.timezone)} · Capacidad {timeslot.capacity}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-400">
+                            {venue ? `Hora local de ${venue.name}: ${timeZoneSummary(venue.timezone)}` : "Zona horaria pendiente"}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                           <TimerReset size={16} />
@@ -666,6 +695,10 @@ export function AdminTimeslotsPage() {
                             <input className="field" type="datetime-local" value={editStartsAt} onChange={(event) => setEditStartsAt(event.target.value)} />
                             <input className="field" type="datetime-local" value={editEndsAt} onChange={(event) => setEditEndsAt(event.target.value)} />
                           </div>
+
+                          <p className="text-xs font-medium text-slate-400">
+                            Los horarios visibles se informan en la hora local de la sede para evitar cruces con UTC.
+                          </p>
 
                           <div className="grid gap-4 sm:grid-cols-3">
                             <input className="field" type="number" min="1" value={editCapacity} onChange={(event) => setEditCapacity(event.target.value)} />
@@ -704,13 +737,3 @@ export function AdminTimeslotsPage() {
     </>
   );
 }
-
-
-
-
-
-
-
-
-
-
