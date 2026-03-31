@@ -1,6 +1,7 @@
-import { CalendarDays, Compass, House, LogIn, Shield, Ticket } from "lucide-react";
+﻿import { Building2, CalendarDays, Compass, House, LogIn, Shield, Ticket } from "lucide-react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./modules/auth/auth-context";
+import { AdminInventoryPage } from "./pages/admin-inventory-page";
 import { AdminTimeslotsPage } from "./pages/admin-timeslots-page";
 import { ExplorePage } from "./pages/explore-page";
 import { HomePage } from "./pages/home-page";
@@ -72,6 +73,14 @@ function AppShell() {
             }
           />
           <Route
+            path="/admin/inventory"
+            element={
+              <AdminRoute>
+                <AdminInventoryPage />
+              </AdminRoute>
+            }
+          />
+          <Route
             path="/admin/timeslots"
             element={
               <AdminRoute>
@@ -88,7 +97,7 @@ function AppShell() {
           <MobileLink to="/" label="Inicio" icon={House} />
           <MobileLink to="/explore" label="Explorar" icon={Compass} />
           {isAdmin ? (
-            <MobileLink to="/admin/timeslots" label="Admin" icon={Shield} />
+            <MobileLink to="/admin/inventory" label="Admin" icon={Building2} />
           ) : (
             <MobileLink to="/bookings" label="Reservas" icon={Ticket} />
           )}

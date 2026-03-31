@@ -30,7 +30,7 @@ export function AppHeader() {
             Mis reservas
           </DesktopNavLink>
           {isAdmin ? (
-            <DesktopNavLink to="/admin/timeslots" icon={<Shield size={16} />}>
+            <DesktopNavLink to="/admin/inventory" icon={<Shield size={16} />}>
               Admin
             </DesktopNavLink>
           ) : null}
@@ -67,7 +67,7 @@ export function AppHeader() {
             </div>
             <p className="mt-1 text-xs text-slate-500">
               {user.role === "admin"
-                ? "Puede gestionar usuarios, turnos y próximas herramientas administrativas."
+                ? "Puede gestionar usuarios, sedes, canchas, turnos y próximas herramientas administrativas."
                 : "Puede registrarse, explorar turnos y administrar sus propias reservas."}
             </p>
           </div>

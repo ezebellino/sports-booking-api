@@ -8,6 +8,9 @@ Build a mobile-first sports booking experience that lets a user register, browse
 - React + Tailwind frontend scaffold in `frontend/`.
 - Local auth flow with persistent session and booking UI.
 - CORS enabled for local frontend development.
+- Role model with `admin` and `user`.
+- Admin timeslot module with bulk generation, inline editing, and duplicate-aware preview.
+- Automated backend coverage for auth, booking, and admin timeslot generation.
 
 ## Guiding Principles
 - Keep the user flow mobile-first from day one.
@@ -63,98 +66,88 @@ Objective: prepare the app for monetization and real operations.
 - Notifications by email or WhatsApp.
 - Metrics dashboard for demand, occupancy, and revenue.
 
-## Immediate Next Sprint
-1. Improve the explore page UX and booking confirmation states.
-2. Add backend-friendly booking detail responses for the frontend.
-3. Create an admin module for timeslot management.
-4. Define role model and protected admin routes.
-5. Add basic automated tests for auth and booking flows.
+## Sprint 01 Status
+Objective: turn the scaffold into a reliable MVP slice with a cleaner booking flow and a clear path to admin capabilities.
 
-## Sprint 01 Backlog
-Objective: turn the current scaffold into a reliable MVP slice with a cleaner booking flow and a clear path to admin capabilities.
+### Completed
+- Task A1: Explore flow improved for mobile with sticky context and stronger selected states.
+- Task A2: Auth and booking feedback improved with clearer validation and outcome states.
+- Task B1: `GET /bookings` now returns nested sport, venue, court, and timeslot details.
+- Task B2: Auth and booking errors are now standardized for frontend display.
+- Task C1: Role model defined with protected admin routes and role-aware navigation.
+- Task C2: First admin timeslot module shipped with bulk create, edit, and duplicate-aware preview.
+- Task D1: Automated checks cover auth, booking, admin protection, and bulk timeslot generation.
 
-### Track A: UX and Product Flow
+### Still Useful To Formalize
+- Task D2: Keep a repeatable release checklist attached to every checkpoint.
+
+## Release Checklist
+- Frontend build passes.
+- Backend tests pass.
+- Manual review of Home, Explore, Bookings, and Admin Timeslots on mobile-first layout.
+- UTF-8 review for visible UI strings after edits done from Windows shell.
+- Commit and push after a coherent product slice is complete.
+
+## Sprint 02 Backlog
+Objective: move from “usable admin slice” to “operable platform” for real daily management.
+
+### Track A: Admin Data Management
 Priority: P1
 
-Task A1: Improve the explore flow on mobile.
-- Add stronger selected states and sticky context for chosen sport, venue, and court.
-- Make timeslot cards easier to scan with clearer date, price, and venue labels.
-- Prevent accidental dead ends by guiding the user when a previous filter is missing.
+Task A1: Build admin CRUD for venues and courts.
+- List venues and courts from the frontend.
+- Add create and edit flows with validation.
+- Keep role protection consistent with timeslots.
 Done when:
-- A user can move from sport to confirmed booking without confusion on a mobile viewport.
+- An admin can maintain core inventory without leaving the app.
 
-Task A2: Improve auth and booking feedback.
-- Add inline validation for login and register forms.
-- Differentiate loading, success, and error messages more clearly.
-- Reset stale success messages when filters or actions change.
+Task A2: Improve admin filtering and discoverability.
+- Filter timeslots by sport, venue, court, and date in one flow.
+- Reduce cognitive load when there are many courts.
 Done when:
-- Login, register, and reserve actions always show a clear outcome state.
+- An admin can find and modify a specific operational slice quickly.
 
-### Track B: Backend Read Models
+### Track B: Reservation Quality
 Priority: P1
 
-Task B1: Add booking detail responses for the frontend.
-- Expand booking reads so the frontend does not need to reconstruct venue, court, and sport context from multiple endpoints.
-- Keep the existing create booking flow stable.
+Task B1: Add cancellation flow.
+- Let a user cancel an eligible booking.
+- Reflect cancellation in personal history and availability.
 Done when:
-- `GET /bookings` returns enough data to render a booking card directly.
+- A reservation can move from confirmed to cancelled without manual DB intervention.
 
-Task B2: Standardize API-facing error messages.
-- Review auth and booking errors for consistent `detail` payloads.
-- Make user-facing failures readable and predictable.
+Task B2: Surface occupancy and availability.
+- Show remaining capacity in the explore flow.
+- Make “full” and “few spots left” visible before booking.
 Done when:
-- Frontend can show backend errors without custom parsing per endpoint.
+- Users understand availability before attempting to reserve.
 
-### Track C: Admin Foundation
+### Track C: Domain Safety
 Priority: P2
 
-Task C1: Define roles and admin protection strategy.
-- Decide the first role model: `admin` and `user`.
-- Protect admin-only routes in backend and frontend navigation.
+Task C1: Add safer validation for inactive and expired resources.
+- Prevent booking on inactive courts and expired timeslots consistently.
+- Ensure admin edits do not create invalid states silently.
 Done when:
-- There is a clear technical rule for what an admin can access.
+- Invalid operational states are blocked with readable errors.
 
-Task C2: Build the first admin timeslot module.
-- Create an admin screen to list and create timeslots.
-- Keep scope narrow: start with create + list before full edit/delete UX.
+Task C2: Improve timezone clarity.
+- Make venue-local time explicit in admin and user views.
+- Avoid confusion around late-night slots and UTC serialization.
 Done when:
-- An admin can create a timeslot from the frontend and see it reflected in the system.
+- Operators and users interpret displayed schedules the same way.
 
-### Track D: Confidence and QA
-Priority: P1
-
-Task D1: Add automated checks for auth and booking flows.
-- Cover register or login success path.
-- Cover booking creation success path.
-- Cover at least one booking failure case, such as duplicate booking or full timeslot.
-Done when:
-- Core auth and booking flows have repeatable test coverage.
-
-Task D2: Add a release checklist for each checkpoint.
-- Frontend build passes.
-- Backend import or startup checks pass.
-- Manual mobile review is completed.
-Done when:
-- Each milestone can be validated the same way before commit.
-
-## Recommended Execution Order
-1. Task B1: booking detail responses.
-2. Task A1: improve explore flow using the richer booking shape.
-3. Task A2: auth and booking feedback polish.
-4. Task D1: automated tests for the current slice.
-5. Task C1: define roles.
-6. Task C2: admin timeslot module.
-
-## Next Task To Start
-Start with Task B1.
+## Recommended Next Task
+Start with Sprint 02 / Task A1: admin CRUD for venues and courts.
 Reason:
-- It removes frontend join workarounds.
-- It improves the current user-facing bookings screen immediately.
-- It creates a cleaner contract before we keep polishing the UI.
+- It completes the operator story that now starts with timeslots.
+- It unlocks day-to-day maintenance without touching the database.
+- It keeps momentum on the admin surface before moving to cancellations and occupancy.
 
 ## Definition of Done for Each Iteration
 - The flow works end-to-end locally.
 - Mobile layout is reviewed first.
-- Build passes in frontend.
-- Backend imports and startup checks pass.
+- Frontend build passes.
+- Backend tests pass when backend behavior changed.
+- Visible strings are checked for UTF-8 correctness.
 - Changes are committed with a clear message.

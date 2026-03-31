@@ -187,6 +187,28 @@ export const api = {
       sportId ? venues.filter((venue) => !venue.allowed_sport_id || venue.allowed_sport_id === sportId) : venues,
     ),
 
+  createVenue: (input: { name: string; address: string | null; timezone: string; allowed_sport_id: string | null }) =>
+    request<Venue>("/venues", {
+      method: "POST",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  updateVenue: (venueId: string, input: { name?: string; address?: string | null; timezone?: string; allowed_sport_id?: string | null }) =>
+    request<Venue>(`/venues/${venueId}`, {
+      method: "PATCH",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  deleteVenue: (venueId: string) =>
+    request<void>(`/venues/${venueId}`, {
+      method: "DELETE",
+      auth: true,
+    }),
+
   listCourts: (params: { venueId?: string | null; sportId?: string | null }) => {
     const searchParams = new URLSearchParams();
     searchParams.set("limit", "100");
@@ -198,6 +220,28 @@ export const api = {
     }
     return request<Court[]>(`/courts?${searchParams.toString()}`);
   },
+
+  createCourt: (input: { venue_id: string; sport_id: string; name: string; indoor: boolean | null; is_active: boolean }) =>
+    request<Court>("/courts", {
+      method: "POST",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  updateCourt: (courtId: string, input: { venue_id?: string; sport_id?: string; name?: string; indoor?: boolean | null; is_active?: boolean }) =>
+    request<Court>(`/courts/${courtId}`, {
+      method: "PATCH",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  deleteCourt: (courtId: string) =>
+    request<void>(`/courts/${courtId}`, {
+      method: "DELETE",
+      auth: true,
+    }),
 
   listTimeslots: (params: { courtId?: string | null; dateFrom?: string; dateTo?: string }) => {
     const searchParams = new URLSearchParams();

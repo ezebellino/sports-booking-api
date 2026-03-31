@@ -1,21 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException, status #type: ignore
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm #type: ignore
-from sqlalchemy.orm import Session #type: ignore
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
 
-from app.db.session import get_db #type: ignore
-from app.models.user import User #type: ignore
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_password_hash,
+    verify_password,
+)
+from app.db.session import get_db
+from app.models.user import User
+from app.schemas.auth import RefreshRequest, TokenPair
 from app.schemas.user import UserCreate, UserPublic
-from app.schemas.auth import RefreshRequest, TokenPair #type: ignore
-from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token, decode_token #type: ignore
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
 
 @router.post("/register", response_model=UserPublic, status_code=201)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
     exists = db.query(User).filter(User.email == payload.email).first()
     if exists:
         raise HTTPException(status_code=409, detail="Email ya registrado")
+
     user = User(
         email=payload.email,
         full_name=payload.full_name,
@@ -27,19 +35,17 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     db.refresh(user)
     return UserPublic(id=str(user.id), email=user.email, full_name=user.full_name, role=user.role)
 
+
 @router.post("/login", response_model=TokenPair)
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == form.username).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Credenciales inválidas (user no existe)")
-
-    ok = verify_password(form.password, user.hashed_password)
-    if not ok:
-        raise HTTPException(status_code=401, detail="Credenciales inválidas (password no matchea)")
+    if not user or not verify_password(form.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
     access = create_access_token(subject=str(user.id), extra={"email": user.email, "role": user.role})
     refresh = create_refresh_token(subject=str(user.id))
     return TokenPair(access_token=access, refresh_token=refresh)
+
 
 @router.post("/refresh", response_model=TokenPair)
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
@@ -49,7 +55,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Refresh token inválido o expirado")
 
     if refresh_payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Token inválido (no es refresh)")
+        raise HTTPException(status_code=401, detail="Refresh token inválido")
 
     user_id = refresh_payload.get("sub")
     user = db.get(User, user_id)
@@ -58,7 +64,6 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
 
     access = create_access_token(subject=str(user.id), extra={"email": user.email, "role": user.role})
     new_refresh = create_refresh_token(subject=str(user.id))
-
     return TokenPair(access_token=access, refresh_token=new_refresh)
 
 
@@ -75,6 +80,7 @@ def me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return UserPublic(id=str(user.id), email=user.email, full_name=user.full_name, role=user.role)
 
+
 @router.patch("/change-password", status_code=204)
 def change_password(new_password: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
@@ -90,4 +96,3 @@ def change_password(new_password: str, token: str = Depends(oauth2_scheme), db: 
     user.hashed_password = get_password_hash(new_password)
     db.add(user)
     db.commit()
-    return

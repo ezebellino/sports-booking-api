@@ -31,7 +31,7 @@ def register_and_login(client, email: str, password: str, full_name: str = "Test
 
 
 def seed_timeslot(db_session, *, capacity: int = 1) -> TimeSlot:
-    sport = Sport(name="Padel", description="Partidos rÃƒÆ’Ã‚Â¡pidos")
+    sport = Sport(name="Padel", description="Partidos rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡pidos")
     db_session.add(sport)
     db_session.flush()
 
@@ -231,7 +231,7 @@ def test_booking_rejects_when_timeslot_is_full(client, db_session):
         headers=auth_headers(second_user_token),
     )
     assert second_response.status_code == 409
-    assert second_response.json()["detail"] == "Timeslot is full"
+    assert second_response.json()["detail"] == "El turno ya está completo"
 def test_bulk_create_uses_end_time_as_last_allowed_start(client, db_session):
     seed = seed_timeslot(db_session, capacity=2)
 
@@ -265,3 +265,142 @@ def test_bulk_create_uses_end_time_as_last_allowed_start(client, db_session):
     starts = [datetime.fromisoformat(slot["starts_at"].replace("Z", "+00:00")) for slot in payload["created_slots"]]
     assert payload["created_count"] == 10
     assert starts[-1] == base_day + timedelta(hours=13, minutes=30)
+
+
+def test_non_admin_cannot_manage_venues_or_courts(client, db_session):
+    sport = Sport(name="Tenis", description="Singles y dobles")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    user_token = register_and_login(client, "inventory-user@example.com", "password123", "Inventory User")
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Sur",
+            "address": "Calle 123",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(user_token),
+    )
+    assert venue_response.status_code == 403
+
+    venue = Venue(
+        name="Sede Base",
+        address="Base 100",
+        timezone="America/Argentina/Buenos_Aires",
+        allowed_sport_id=sport.id,
+    )
+    db_session.add(venue)
+    db_session.commit()
+    db_session.refresh(venue)
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": str(venue.id),
+            "sport_id": str(sport.id),
+            "name": "Cancha B",
+            "indoor": True,
+            "is_active": True,
+        },
+        headers=auth_headers(user_token),
+    )
+    assert court_response.status_code == 403
+
+
+def test_admin_can_create_update_and_delete_venue_and_court(client, db_session):
+    sport = Sport(name="Fútbol 5", description="Turnos nocturnos")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    register_and_login(client, "inventory-admin@example.com", "password123", "Inventory Admin")
+    admin_user = db_session.query(User).filter(User.email == "inventory-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "inventory-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    create_venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Oeste",
+            "address": "Av. del Deporte 500",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert create_venue_response.status_code == 201
+    venue_id = create_venue_response.json()["id"]
+
+    update_venue_response = client.patch(
+        f"/venues/{venue_id}",
+        json={"name": "Sede Oeste Renovada", "address": "Av. del Deporte 550"},
+        headers=auth_headers(admin_token),
+    )
+    assert update_venue_response.status_code == 200
+    assert update_venue_response.json()["name"] == "Sede Oeste Renovada"
+
+    create_court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": venue_id,
+            "sport_id": str(sport.id),
+            "name": "Cancha Central",
+            "indoor": False,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert create_court_response.status_code == 201
+    court_id = create_court_response.json()["id"]
+
+    update_court_response = client.patch(
+        f"/courts/{court_id}",
+        json={"name": "Cancha Central 2", "indoor": True, "is_active": False},
+        headers=auth_headers(admin_token),
+    )
+    assert update_court_response.status_code == 200
+    assert update_court_response.json()["name"] == "Cancha Central 2"
+    assert update_court_response.json()["is_active"] is False
+
+    delete_court_response = client.delete(f"/courts/{court_id}", headers=auth_headers(admin_token))
+    assert delete_court_response.status_code == 204
+
+    delete_venue_response = client.delete(f"/venues/{venue_id}", headers=auth_headers(admin_token))
+    assert delete_venue_response.status_code == 204
+
+
+def test_admin_delete_blocks_for_related_courts_and_timeslots(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=2)
+
+    register_and_login(client, "inventory-admin-block@example.com", "password123", "Inventory Admin Block")
+    admin_user = db_session.query(User).filter(User.email == "inventory-admin-block@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "inventory-admin-block@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    delete_court_response = client.delete(
+        f"/courts/{timeslot.court_id}",
+        headers=auth_headers(admin_token),
+    )
+    assert delete_court_response.status_code == 409
+    assert delete_court_response.json()["detail"] == "No se puede eliminar una cancha con turnos asociados"
+
+    delete_venue_response = client.delete(
+        f"/venues/{timeslot.court.venue_id}",
+        headers=auth_headers(admin_token),
+    )
+    assert delete_venue_response.status_code == 409
+    assert delete_venue_response.json()["detail"] == "No se puede eliminar una sede con canchas asociadas"
