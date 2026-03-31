@@ -1,4 +1,4 @@
-# Development Plan
+﻿# Development Plan
 
 ## Product Goal
 Build a mobile-first sports booking experience that lets a user register, browse sports venues, pick courts and timeslots, and confirm bookings with minimal friction.
@@ -9,8 +9,8 @@ Build a mobile-first sports booking experience that lets a user register, browse
 - Local auth flow with persistent session and booking UI.
 - CORS enabled for local frontend development.
 - Role model with `admin` and `user`.
-- Admin timeslot module with bulk generation, inline editing, and duplicate-aware preview.
-- Automated backend coverage for auth, booking, and admin timeslot generation.
+- Admin timeslot module with bulk generation, inline editing, duplicate-aware preview, and richer availability signals.
+- Automated backend coverage for auth, booking, cancellations, occupancy, and admin timeslot generation.
 
 ## Guiding Principles
 - Keep the user flow mobile-first from day one.
@@ -88,41 +88,18 @@ Objective: turn the scaffold into a reliable MVP slice with a cleaner booking fl
 - UTF-8 review for visible UI strings after edits done from Windows shell.
 - Commit and push after a coherent product slice is complete.
 
-## Sprint 02 Backlog
-Objective: move from “usable admin slice” to “operable platform” for real daily management.
+## Sprint 02 Status
+Objective: move from "usable admin slice" to "operable platform" for real daily management.
 
-### Track A: Admin Data Management
-Priority: P1
+### Completed
+- Task A1: Admin CRUD for venues and courts shipped in-app.
+- Task A2: Admin filtering improved across inventory and timeslots.
+- Task B1: Cancellation flow added with status history and capacity release.
+- Task B2: Explore now surfaces occupancy, remaining spots, and full / few spots left states.
 
-Task A1: Build admin CRUD for venues and courts.
-- List venues and courts from the frontend.
-- Add create and edit flows with validation.
-- Keep role protection consistent with timeslots.
-Done when:
-- An admin can maintain core inventory without leaving the app.
+### Remaining
 
-Task A2: Improve admin filtering and discoverability.
-- Filter timeslots by sport, venue, court, and date in one flow.
-- Reduce cognitive load when there are many courts.
-Done when:
-- An admin can find and modify a specific operational slice quickly.
-
-### Track B: Reservation Quality
-Priority: P1
-
-Task B1: Add cancellation flow.
-- Let a user cancel an eligible booking.
-- Reflect cancellation in personal history and availability.
-Done when:
-- A reservation can move from confirmed to cancelled without manual DB intervention.
-
-Task B2: Surface occupancy and availability.
-- Show remaining capacity in the explore flow.
-- Make “full” and “few spots left” visible before booking.
-Done when:
-- Users understand availability before attempting to reserve.
-
-### Track C: Domain Safety
+#### Track C: Domain Safety
 Priority: P2
 
 Task C1: Add safer validation for inactive and expired resources.
@@ -138,11 +115,11 @@ Done when:
 - Operators and users interpret displayed schedules the same way.
 
 ## Recommended Next Task
-Start with Sprint 02 / Task A1: admin CRUD for venues and courts.
+Start with Sprint 02 / Track C / Task C1: add safer validation for inactive and expired resources.
 Reason:
-- It completes the operator story that now starts with timeslots.
-- It unlocks day-to-day maintenance without touching the database.
-- It keeps momentum on the admin surface before moving to cancellations and occupancy.
+- It closes a domain safety gap now that reservation and admin flows are already more complete.
+- It aligns backend rules with the new availability signals shown in Explore.
+- It prevents confusing edge cases before we move into booking policies and monetization.
 
 ## Definition of Done for Each Iteration
 - The flow works end-to-end locally.
@@ -151,3 +128,4 @@ Reason:
 - Backend tests pass when backend behavior changed.
 - Visible strings are checked for UTF-8 correctness.
 - Changes are committed with a clear message.
+

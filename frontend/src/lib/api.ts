@@ -40,6 +40,9 @@ export type TimeSlot = {
   capacity: number;
   price: number | null;
   is_active: boolean;
+  confirmed_bookings: number;
+  remaining_spots: number;
+  availability_status: "available" | "few_left" | "full" | "inactive" | "expired";
 };
 
 export type TimeSlotBulkCreateResult = {
@@ -319,3 +322,4 @@ export const api = {
       auth: true,
     }),
 };
+

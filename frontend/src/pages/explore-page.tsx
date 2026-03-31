@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   Trees,
   Trophy,
+  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -18,7 +19,7 @@ import { AppHeader } from "../components/app-header";
 import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
-import { api } from "../lib/api";
+import { api, type TimeSlot } from "../lib/api";
 import { currency, dateInputDefault, dateLabel, localDateBounds } from "../lib/format";
 import { useAuth } from "../modules/auth/auth-context";
 
@@ -137,12 +138,8 @@ export function ExplorePage() {
         <div className="shell-card sticky top-3 z-10 border border-slate-200/80 bg-white/95 p-4 backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                Progreso de reserva
-              </p>
-              <h3 className="mt-1 text-lg font-bold text-slate-950">
-                {progress}/3 pasos completos antes de ver turnos
-              </h3>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Progreso de reserva</p>
+              <h3 className="mt-1 text-lg font-bold text-slate-950">{progress}/3 pasos completos antes de ver turnos</h3>
               <p className="mt-1 text-sm text-slate-500">
                 Mantenemos visible tu contexto para que no te pierdas al bajar por la pantalla.
               </p>
@@ -281,6 +278,8 @@ export function ExplorePage() {
                     const court = courtsById.get(slot.court_id);
                     const sport = court ? sportsById.get(court.sport_id) : null;
                     const venue = court ? venuesById.get(court.venue_id) : null;
+                    const isBookable = slot.availability_status === "available" || slot.availability_status === "few_left";
+                    const bookingPending = bookingMutation.isPending && bookingMutation.variables === slot.id;
 
                     return (
                       <article key={slot.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -291,6 +290,16 @@ export function ExplorePage() {
                             <span>{venue?.name || "Sede"}</span>
                           </div>
 
+                          <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-center gap-2">
+                              <Users size={16} className="text-slate-500" />
+                              <span>
+                                {slot.confirmed_bookings}/{slot.capacity} reservados · {slot.remaining_spots} disponibles
+                              </span>
+                            </div>
+                            <AvailabilityBadge slot={slot} />
+                          </div>
+
                           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                               <h3 className="text-lg font-bold text-slate-950">{court?.name || "Cancha"}</h3>
@@ -298,17 +307,18 @@ export function ExplorePage() {
                                 <Clock3 size={16} />
                                 <span>{dateLabel(slot.starts_at)}</span>
                               </div>
+                              <p className="mt-2 text-sm text-slate-500">{availabilityMessage(slot)}</p>
                               <p className="mt-2 text-base font-semibold text-slate-900">{currency(slot.price)}</p>
                             </div>
 
                             {isAuthenticated ? (
                               <button
-                                className="btn-primary"
+                                className={isBookable ? "btn-primary" : "btn-secondary opacity-60"}
                                 type="button"
                                 onClick={() => bookingMutation.mutate(slot.id)}
-                                disabled={bookingMutation.isPending}
+                                disabled={bookingPending || !isBookable}
                               >
-                                {bookingMutation.isPending ? "Reservando..." : "Reservar"}
+                                {bookingPending ? "Reservando..." : isBookable ? "Reservar" : buttonLabel(slot)}
                               </button>
                             ) : (
                               <Link className="btn-secondary" to="/login">
@@ -379,7 +389,12 @@ function SelectionBadge({
       <span>
         {label}: {value}
       </span>
-      <button type="button" className="rounded-full bg-white/10 p-1 text-white/80 transition hover:bg-white/20" onClick={onClear} aria-label={`Limpiar ${label}`}>
+      <button
+        type="button"
+        className="rounded-full bg-white/10 p-1 text-white/80 transition hover:bg-white/20"
+        onClick={onClear}
+        aria-label={`Limpiar ${label}`}
+      >
         <X size={12} />
       </button>
     </span>
@@ -398,4 +413,59 @@ function StepHint({ message, tone = "default" }: { message: string; tone?: "defa
       {message}
     </div>
   );
+}
+
+function AvailabilityBadge({ slot }: { slot: TimeSlot }) {
+  const styles = {
+    available: "bg-emerald-100 text-emerald-800",
+    few_left: "bg-amber-100 text-amber-800",
+    full: "bg-rose-100 text-rose-800",
+    inactive: "bg-slate-200 text-slate-600",
+    expired: "bg-slate-200 text-slate-600",
+  }[slot.availability_status];
+
+  return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>{availabilityLabel(slot)}</span>;
+}
+
+function availabilityLabel(slot: TimeSlot) {
+  switch (slot.availability_status) {
+    case "few_left":
+      return "Pocos lugares";
+    case "full":
+      return "Completo";
+    case "inactive":
+      return "Inactivo";
+    case "expired":
+      return "Vencido";
+    default:
+      return "Disponible";
+  }
+}
+
+function availabilityMessage(slot: TimeSlot) {
+  switch (slot.availability_status) {
+    case "few_left":
+      return `Quedan ${slot.remaining_spots} lugar${slot.remaining_spots === 1 ? "" : "es"}.`;
+    case "full":
+      return "No quedan cupos para este horario.";
+    case "inactive":
+      return "Este turno está inactivo por el momento.";
+    case "expired":
+      return "Este turno ya pasó y queda solo como referencia.";
+    default:
+      return `Hay ${slot.remaining_spots} lugares disponibles en este turno.`;
+  }
+}
+
+function buttonLabel(slot: TimeSlot) {
+  switch (slot.availability_status) {
+    case "full":
+      return "Completo";
+    case "inactive":
+      return "Inactivo";
+    case "expired":
+      return "Vencido";
+    default:
+      return "Reservar";
+  }
 }

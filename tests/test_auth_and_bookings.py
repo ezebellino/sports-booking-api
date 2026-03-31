@@ -494,3 +494,61 @@ def test_same_user_can_reconfirm_cancelled_booking_when_slot_is_available(client
     assert reconfirm_response.json()["status"] == "confirmed"
 
 
+
+def test_timeslot_list_reports_remaining_spots_and_availability(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=3)
+
+    first_user_token = register_and_login(client, "capacity-first@example.com", "password123", "Capacity First")
+    second_user_token = register_and_login(client, "capacity-second@example.com", "password123", "Capacity Second")
+
+    first_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(first_user_token),
+    )
+    assert first_response.status_code == 201
+
+    second_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(second_user_token),
+    )
+    assert second_response.status_code == 201
+
+    timeslots_response = client.get(
+        f"/timeslots?court_id={timeslot.court_id}&limit=100",
+    )
+    assert timeslots_response.status_code == 200
+
+    payload = timeslots_response.json()[0]
+    assert payload["confirmed_bookings"] == 2
+    assert payload["remaining_spots"] == 1
+    assert payload["availability_status"] == "few_left"
+
+
+def test_timeslot_list_updates_availability_after_cancellation(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=1)
+    access_token = register_and_login(client, "availability-cancel@example.com", "password123", "Availability Cancel")
+
+    booking_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert booking_response.status_code == 201
+
+    full_response = client.get(f"/timeslots?court_id={timeslot.court_id}&limit=100")
+    assert full_response.status_code == 200
+    assert full_response.json()[0]["availability_status"] == "full"
+    assert full_response.json()[0]["remaining_spots"] == 0
+
+    cancel_response = client.patch(
+        f"/bookings/{booking_response.json()['id']}/cancel",
+        headers=auth_headers(access_token),
+    )
+    assert cancel_response.status_code == 200
+
+    refreshed_response = client.get(f"/timeslots?court_id={timeslot.court_id}&limit=100")
+    assert refreshed_response.status_code == 200
+    assert refreshed_response.json()[0]["availability_status"] == "few_left"
+    assert refreshed_response.json()[0]["remaining_spots"] == 1

@@ -1,6 +1,8 @@
-from pydantic import BaseModel, ConfigDict, field_validator
-from datetime import datetime
+﻿from datetime import datetime
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
 
 class TimeSlotCreate(BaseModel):
     court_id: UUID
@@ -37,6 +39,9 @@ class TimeSlotPublic(BaseModel):
     capacity: int
     price: float | None = None
     is_active: bool
+    confirmed_bookings: int = 0
+    remaining_spots: int = 0
+    availability_status: str = "available"
 
 
 class TimeSlotBulkCreate(BaseModel):
