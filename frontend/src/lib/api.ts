@@ -42,7 +42,14 @@ export type TimeSlot = {
   is_active: boolean;
   confirmed_bookings: number;
   remaining_spots: number;
-  availability_status: "available" | "few_left" | "full" | "inactive" | "expired";
+  availability_status: "available" | "few_left" | "full" | "inactive" | "expired" | "booking_closed";
+};
+
+export type BookingPolicy = {
+  min_booking_lead_minutes: number;
+  cancellation_min_lead_minutes: number;
+  booking_message: string;
+  cancellation_message: string;
 };
 
 export type TimeSlotBulkCreateResult = {
@@ -62,6 +69,9 @@ export type Booking = {
 };
 
 export type BookingDetail = Booking & {
+  can_cancel: boolean;
+  cancellation_deadline: string | null;
+  cancellation_policy_message: string | null;
   timeslot: TimeSlot & {
     court: Court & {
       venue: Venue;
@@ -306,6 +316,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  listBookingPolicies: () => request<BookingPolicy>("/bookings/policies"),
+
   listBookings: () => request<BookingDetail[]>("/bookings", { auth: true }),
 
   createBooking: (timeslotId: string) =>
@@ -322,4 +334,3 @@ export const api = {
       auth: true,
     }),
 };
-

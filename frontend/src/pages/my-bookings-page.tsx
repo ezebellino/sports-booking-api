@@ -1,5 +1,5 @@
 ﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarX2 } from "lucide-react";
+import { CalendarClock, CalendarX2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
 import { EmptyState } from "../components/empty-state";
@@ -11,6 +11,7 @@ import { dateLabel, timeZoneSummary } from "../lib/format";
 export function MyBookingsPage() {
   const queryClient = useQueryClient();
   const bookingsQuery = useQuery({ queryKey: ["bookings"], queryFn: api.listBookings });
+  const policiesQuery = useQuery({ queryKey: ["booking-policies"], queryFn: api.listBookingPolicies });
 
   const cancelBookingMutation = useMutation({
     mutationFn: api.cancelBooking,
@@ -38,6 +39,16 @@ export function MyBookingsPage() {
           title="Tus reservas"
           description="Acá podés revisar tu historial, ver el estado de cada reserva y cancelar las que ya no vayas a usar. Los horarios se muestran en la hora local de cada sede."
         />
+
+        {policiesQuery.data ? (
+          <div className="shell-card flex items-start gap-3 p-4 text-sm text-slate-600">
+            <CalendarClock className="mt-0.5 text-skyline" size={18} />
+            <div>
+              <p className="font-semibold text-slate-900">Política actual de reservas</p>
+              <p className="mt-1">{policiesQuery.data.cancellation_message}</p>
+            </div>
+          </div>
+        ) : null}
 
         {!bookingsQuery.data?.length ? (
           <EmptyState
@@ -73,6 +84,13 @@ export function MyBookingsPage() {
                       </h3>
                       <p className="mt-2 text-sm text-slate-500">{dateLabel(timeslot.starts_at, venue.timezone)}</p>
                       <p className="mt-1 text-xs font-medium text-slate-400">Hora local de la sede: {timeZoneSummary(venue.timezone)}</p>
+                      {!isCancelled ? (
+                        <p className="mt-2 text-xs text-slate-500">
+                          {booking.can_cancel && booking.cancellation_deadline
+                            ? `Podés cancelar hasta ${dateLabel(booking.cancellation_deadline, venue.timezone)}.`
+                            : booking.cancellation_policy_message}
+                        </p>
+                      ) : null}
                     </div>
 
                     {isCancelled ? (
@@ -81,13 +99,13 @@ export function MyBookingsPage() {
                       </span>
                     ) : (
                       <button
-                        className="btn-secondary text-rose-700"
+                        className={`btn-secondary ${booking.can_cancel ? "text-rose-700" : "opacity-60"}`}
                         type="button"
                         onClick={() => cancelBookingMutation.mutate(booking.id)}
-                        disabled={isCancelling}
+                        disabled={isCancelling || !booking.can_cancel}
                       >
                         <CalendarX2 size={16} />
-                        {isCancelling ? "Cancelando..." : "Cancelar reserva"}
+                        {isCancelling ? "Cancelando..." : booking.can_cancel ? "Cancelar reserva" : "Cancelación cerrada"}
                       </button>
                     )}
                   </div>

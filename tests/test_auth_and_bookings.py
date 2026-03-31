@@ -680,3 +680,84 @@ def test_timeslot_list_marks_started_slot_as_expired(client, db_session):
     assert timeslots_response.status_code == 200
     assert timeslots_response.json()[0]["availability_status"] == "expired"
 
+
+
+def test_booking_policies_endpoint_exposes_current_rules(client):
+    response = client.get("/bookings/policies")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["min_booking_lead_minutes"] == 30
+    assert payload["cancellation_min_lead_minutes"] == 120
+
+
+def test_booking_rejects_when_minimum_lead_time_is_not_met(client, db_session):
+    access_token = register_and_login(client, "lead-policy@example.com", "password123", "Lead Policy")
+    timeslot = seed_timeslot(db_session, capacity=2)
+    timeslot.starts_at = datetime.now(timezone.utc) + timedelta(minutes=20)
+    timeslot.ends_at = timeslot.starts_at + timedelta(hours=1)
+    db_session.commit()
+
+    response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Las reservas deben hacerse con al menos 30 minutos de anticipación."
+
+
+
+def test_timeslot_list_marks_short_notice_slot_as_booking_closed(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=2)
+    timeslot.starts_at = datetime.now(timezone.utc) + timedelta(minutes=20)
+    timeslot.ends_at = timeslot.starts_at + timedelta(hours=1)
+    db_session.commit()
+
+    response = client.get(f"/timeslots?court_id={timeslot.court_id}&limit=100")
+    assert response.status_code == 200
+    assert response.json()[0]["availability_status"] == "booking_closed"
+
+
+
+def test_booking_cancel_rejects_after_cancellation_window(client, db_session):
+    access_token = register_and_login(client, "cancel-policy@example.com", "password123", "Cancel Policy")
+    timeslot = seed_timeslot(db_session, capacity=2)
+    timeslot.starts_at = datetime.now(timezone.utc) + timedelta(minutes=90)
+    timeslot.ends_at = timeslot.starts_at + timedelta(hours=1)
+    db_session.commit()
+
+    create_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert create_response.status_code == 201
+
+    cancel_response = client.patch(
+        f"/bookings/{create_response.json()['id']}/cancel",
+        headers=auth_headers(access_token),
+    )
+    assert cancel_response.status_code == 409
+    assert cancel_response.json()["detail"] == "Las cancelaciones se permiten hasta 120 minutos antes del inicio del turno."
+
+
+
+def test_booking_list_exposes_cancellation_policy_state(client, db_session):
+    access_token = register_and_login(client, "cancel-state@example.com", "password123", "Cancel State")
+    timeslot = seed_timeslot(db_session, capacity=2)
+    timeslot.starts_at = datetime.now(timezone.utc) + timedelta(minutes=90)
+    timeslot.ends_at = timeslot.starts_at + timedelta(hours=1)
+    db_session.commit()
+
+    create_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert create_response.status_code == 201
+
+    list_response = client.get("/bookings", headers=auth_headers(access_token))
+    assert list_response.status_code == 200
+    booking = list_response.json()[0]
+    assert booking["can_cancel"] is False
+    assert booking["cancellation_policy_message"] == "Las cancelaciones se permiten hasta 120 minutos antes del inicio del turno."

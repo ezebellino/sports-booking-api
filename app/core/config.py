@@ -1,5 +1,6 @@
+﻿from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+
 
 class Settings(BaseSettings):
     SECRET_KEY: str = Field(..., min_length=32)
@@ -8,6 +9,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_DAYS: int = 7
     DATABASE_URL: str
     FRONTEND_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    BOOKING_MIN_LEAD_MINUTES: int = 30
+    CANCELLATION_MIN_LEAD_MINUTES: int = 120
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -15,4 +18,5 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-settings = Settings() # pyright: ignore[reportCallIssue]
+
+settings = Settings()  # pyright: ignore[reportCallIssue]

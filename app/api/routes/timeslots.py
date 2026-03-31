@@ -1,10 +1,11 @@
-﻿from datetime import datetime, timezone
+﻿from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import require_admin
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
@@ -20,6 +21,10 @@ TIMESLOT_NOT_FOUND_DETAIL = "Turno no encontrado"
 TIMESLOT_CAPACITY_CONFLICT_DETAIL = "La capacidad no puede quedar por debajo de las reservas confirmadas"
 
 
+def booking_cutoff_delta() -> timedelta:
+    return timedelta(minutes=settings.BOOKING_MIN_LEAD_MINUTES)
+
+
 def serialize_timeslot(timeslot: TimeSlot, confirmed_bookings: int) -> TimeSlotPublic:
     remaining_spots = max(timeslot.capacity - confirmed_bookings, 0)
     now = datetime.now(timezone.utc)
@@ -28,6 +33,8 @@ def serialize_timeslot(timeslot: TimeSlot, confirmed_bookings: int) -> TimeSlotP
         availability_status = "inactive"
     elif timeslot.starts_at <= now:
         availability_status = "expired"
+    elif timeslot.starts_at < now + booking_cutoff_delta():
+        availability_status = "booking_closed"
     elif remaining_spots <= 0:
         availability_status = "full"
     elif remaining_spots == 1:

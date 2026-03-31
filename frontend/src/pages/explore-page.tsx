@@ -1,6 +1,7 @@
 ﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Calendar1,
+  CalendarClock,
   CheckCircle2,
   CircleDollarSign,
   Clock3,
@@ -36,6 +37,7 @@ export function ExplorePage() {
   const selectedCourtId = searchParams.get("court");
 
   const sportsQuery = useQuery({ queryKey: ["sports"], queryFn: api.listSports });
+  const policiesQuery = useQuery({ queryKey: ["booking-policies"], queryFn: api.listBookingPolicies });
   const venuesQuery = useQuery({
     queryKey: ["venues", selectedSportId],
     queryFn: () => api.listVenues(selectedSportId),
@@ -134,6 +136,17 @@ export function ExplorePage() {
             </div>
           }
         />
+
+        {policiesQuery.data ? (
+          <div className="shell-card flex items-start gap-3 p-4 text-sm text-slate-600">
+            <CalendarClock className="mt-0.5 text-skyline" size={18} />
+            <div>
+              <p className="font-semibold text-slate-900">Política actual de reserva</p>
+              <p className="mt-1">{policiesQuery.data.booking_message}</p>
+              <p className="mt-1">{policiesQuery.data.cancellation_message}</p>
+            </div>
+          </div>
+        ) : null}
 
         <div className="shell-card sticky top-3 z-10 border border-slate-200/80 bg-white/95 p-4 backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -307,7 +320,10 @@ export function ExplorePage() {
                                 <Clock3 size={16} />
                                 <span>{dateLabel(slot.starts_at, venue?.timezone)}</span>
                               </div>
-                              <p className="mt-2 text-sm text-slate-500">{availabilityMessage(slot)}</p>`r`n                              <p className="mt-1 text-xs font-medium text-slate-400">Hora local de la sede: {timeZoneSummary(venue?.timezone)}</p>
+                              <p className="mt-2 text-sm text-slate-500">{availabilityMessage(slot, policiesQuery.data?.booking_message)}</p>
+                              <p className="mt-1 text-xs font-medium text-slate-400">
+                                Hora local de la sede: {timeZoneSummary(venue?.timezone)}
+                              </p>
                               <p className="mt-2 text-base font-semibold text-slate-900">{currency(slot.price)}</p>
                             </div>
 
@@ -422,6 +438,7 @@ function AvailabilityBadge({ slot }: { slot: TimeSlot }) {
     full: "bg-rose-100 text-rose-800",
     inactive: "bg-slate-200 text-slate-600",
     expired: "bg-slate-200 text-slate-600",
+    booking_closed: "bg-slate-200 text-slate-600",
   }[slot.availability_status];
 
   return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>{availabilityLabel(slot)}</span>;
@@ -437,12 +454,14 @@ function availabilityLabel(slot: TimeSlot) {
       return "Inactivo";
     case "expired":
       return "Vencido";
+    case "booking_closed":
+      return "Cierre cercano";
     default:
       return "Disponible";
   }
 }
 
-function availabilityMessage(slot: TimeSlot) {
+function availabilityMessage(slot: TimeSlot, bookingPolicyMessage?: string) {
   switch (slot.availability_status) {
     case "few_left":
       return `Quedan ${slot.remaining_spots} lugar${slot.remaining_spots === 1 ? "" : "es"}.`;
@@ -452,6 +471,8 @@ function availabilityMessage(slot: TimeSlot) {
       return "Este turno está inactivo por el momento.";
     case "expired":
       return "Este turno ya pasó y queda solo como referencia.";
+    case "booking_closed":
+      return bookingPolicyMessage ?? "La ventana para reservar este turno ya está cerrada.";
     default:
       return `Hay ${slot.remaining_spots} lugares disponibles en este turno.`;
   }
@@ -465,8 +486,9 @@ function buttonLabel(slot: TimeSlot) {
       return "Inactivo";
     case "expired":
       return "Vencido";
+    case "booking_closed":
+      return "Fuera de política";
     default:
       return "Reservar";
   }
 }
-
