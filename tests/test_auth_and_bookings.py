@@ -703,7 +703,7 @@ def test_booking_rejects_when_minimum_lead_time_is_not_met(client, db_session):
         headers=auth_headers(access_token),
     )
     assert response.status_code == 409
-    assert response.json()["detail"] == "Las reservas deben hacerse con al menos 30 minutos de anticipación."
+    assert response.json()["detail"] == "Las reservas de Padel deben hacerse con al menos 30 minutos de anticipación."
 
 
 
@@ -738,7 +738,7 @@ def test_booking_cancel_rejects_after_cancellation_window(client, db_session):
         headers=auth_headers(access_token),
     )
     assert cancel_response.status_code == 409
-    assert cancel_response.json()["detail"] == "Las cancelaciones se permiten hasta 120 minutos antes del inicio del turno."
+    assert cancel_response.json()["detail"] == "Las cancelaciones de Padel se permiten hasta 120 minutos antes del inicio del turno."
 
 
 
@@ -760,4 +760,54 @@ def test_booking_list_exposes_cancellation_policy_state(client, db_session):
     assert list_response.status_code == 200
     booking = list_response.json()[0]
     assert booking["can_cancel"] is False
-    assert booking["cancellation_policy_message"] == "Las cancelaciones se permiten hasta 120 minutos antes del inicio del turno."
+    assert booking["cancellation_policy_message"] == "Las cancelaciones de Padel se permiten hasta 120 minutos antes del inicio del turno."
+
+
+def test_admin_can_update_sport_policy_windows(client, db_session):
+    sport = Sport(name="Tenis", description="Singles y dobles")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    register_and_login(client, "sport-policy-admin@example.com", "password123", "Sport Policy Admin")
+    admin_user = db_session.query(User).filter(User.email == "sport-policy-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "sport-policy-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    update_response = client.patch(
+        f"/sports/{sport.id}",
+        json={
+            "booking_min_lead_minutes": 90,
+            "cancellation_min_lead_minutes": 180,
+            "description": "Necesita más organización previa",
+        },
+        headers=auth_headers(admin_token),
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["booking_min_lead_minutes"] == 90
+    assert update_response.json()["cancellation_min_lead_minutes"] == 180
+
+    policy_response = client.get(f"/bookings/policies?sport_id={sport.id}")
+    assert policy_response.status_code == 200
+    assert policy_response.json()["uses_default_policy"] is False
+    assert policy_response.json()["booking_message"] == "Las reservas de Tenis deben hacerse con al menos 90 minutos de anticipación."
+
+
+def test_sport_specific_policy_marks_slot_as_booking_closed(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=2)
+    timeslot.court.sport.booking_min_lead_minutes = 90
+    timeslot.starts_at = datetime.now(timezone.utc) + timedelta(minutes=60)
+    timeslot.ends_at = timeslot.starts_at + timedelta(hours=1)
+    db_session.commit()
+
+    response = client.get(f"/timeslots?court_id={timeslot.court_id}&limit=100")
+    assert response.status_code == 200
+    payload = response.json()[0]
+    assert payload["availability_status"] == "booking_closed"
+    assert payload["policy_summary"] == "Esta configuración específica aplica al deporte Padel."

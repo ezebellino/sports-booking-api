@@ -13,6 +13,8 @@ export type Sport = {
   id: string;
   name: string;
   description: string | null;
+  booking_min_lead_minutes: number | null;
+  cancellation_min_lead_minutes: number | null;
 };
 
 export type Venue = {
@@ -43,13 +45,18 @@ export type TimeSlot = {
   confirmed_bookings: number;
   remaining_spots: number;
   availability_status: "available" | "few_left" | "full" | "inactive" | "expired" | "booking_closed";
+  policy_summary: string | null;
 };
 
 export type BookingPolicy = {
+  sport_id: string | null;
+  sport_name: string | null;
+  uses_default_policy: boolean;
   min_booking_lead_minutes: number;
   cancellation_min_lead_minutes: number;
   booking_message: string;
   cancellation_message: string;
+  admin_summary: string;
 };
 
 export type TimeSlotBulkCreateResult = {
@@ -72,6 +79,7 @@ export type BookingDetail = Booking & {
   can_cancel: boolean;
   cancellation_deadline: string | null;
   cancellation_policy_message: string | null;
+  booking_policy_summary: string | null;
   timeslot: TimeSlot & {
     court: Court & {
       venue: Venue;
@@ -195,6 +203,22 @@ export const api = {
 
   listSports: () => request<Sport[]>("/sports"),
 
+  updateSport: (
+    sportId: string,
+    input: {
+      name?: string;
+      description?: string | null;
+      booking_min_lead_minutes?: number | null;
+      cancellation_min_lead_minutes?: number | null;
+    },
+  ) =>
+    request<Sport>(`/sports/${sportId}`, {
+      method: "PATCH",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
   listVenues: (sportId?: string | null) =>
     request<Venue[]>("/venues?limit=100").then((venues) =>
       sportId ? venues.filter((venue) => !venue.allowed_sport_id || venue.allowed_sport_id === sportId) : venues,
@@ -316,7 +340,14 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  listBookingPolicies: () => request<BookingPolicy>("/bookings/policies"),
+  listBookingPolicies: (sportId?: string | null) => {
+    const searchParams = new URLSearchParams();
+    if (sportId) {
+      searchParams.set("sport_id", sportId);
+    }
+    const suffix = searchParams.toString();
+    return request<BookingPolicy>(suffix ? `/bookings/policies?${suffix}` : "/bookings/policies");
+  },
 
   listBookings: () => request<BookingDetail[]>("/bookings", { auth: true }),
 

@@ -11,7 +11,7 @@ import { dateLabel, timeZoneSummary } from "../lib/format";
 export function MyBookingsPage() {
   const queryClient = useQueryClient();
   const bookingsQuery = useQuery({ queryKey: ["bookings"], queryFn: api.listBookings });
-  const policiesQuery = useQuery({ queryKey: ["booking-policies"], queryFn: api.listBookingPolicies });
+  const policiesQuery = useQuery({ queryKey: ["booking-policies"], queryFn: () => api.listBookingPolicies() });
 
   const cancelBookingMutation = useMutation({
     mutationFn: api.cancelBooking,
@@ -44,8 +44,11 @@ export function MyBookingsPage() {
           <div className="shell-card flex items-start gap-3 p-4 text-sm text-slate-600">
             <CalendarClock className="mt-0.5 text-skyline" size={18} />
             <div>
-              <p className="font-semibold text-slate-900">Política actual de reservas</p>
+              <p className="font-semibold text-slate-900">Cómo funcionan las cancelaciones</p>
               <p className="mt-1">{policiesQuery.data.cancellation_message}</p>
+              <p className="mt-2 text-xs font-medium text-slate-400">
+                Si reservás distintos deportes, cada tarjeta te muestra la política exacta que aplica a ese turno.
+              </p>
             </div>
           </div>
         ) : null}
@@ -85,11 +88,16 @@ export function MyBookingsPage() {
                       <p className="mt-2 text-sm text-slate-500">{dateLabel(timeslot.starts_at, venue.timezone)}</p>
                       <p className="mt-1 text-xs font-medium text-slate-400">Hora local de la sede: {timeZoneSummary(venue.timezone)}</p>
                       {!isCancelled ? (
-                        <p className="mt-2 text-xs text-slate-500">
-                          {booking.can_cancel && booking.cancellation_deadline
-                            ? `Podés cancelar hasta ${dateLabel(booking.cancellation_deadline, venue.timezone)}.`
-                            : booking.cancellation_policy_message}
-                        </p>
+                        <>
+                          {booking.booking_policy_summary ? (
+                            <p className="mt-2 text-xs font-medium text-slate-400">{booking.booking_policy_summary}</p>
+                          ) : null}
+                          <p className="mt-1 text-xs text-slate-500">
+                            {booking.can_cancel && booking.cancellation_deadline
+                              ? `Podés cancelar hasta ${dateLabel(booking.cancellation_deadline, venue.timezone)}.`
+                              : booking.cancellation_policy_message}
+                          </p>
+                        </>
                       ) : null}
                     </div>
 
@@ -105,7 +113,7 @@ export function MyBookingsPage() {
                         disabled={isCancelling || !booking.can_cancel}
                       >
                         <CalendarX2 size={16} />
-                        {isCancelling ? "Cancelando..." : booking.can_cancel ? "Cancelar reserva" : "Cancelación cerrada"}
+                        {isCancelling ? "Cancelando..." : booking.can_cancel ? "Cancelar reserva" : "Ventana cerrada"}
                       </button>
                     )}
                   </div>

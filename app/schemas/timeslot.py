@@ -42,6 +42,7 @@ class TimeSlotPublic(BaseModel):
     confirmed_bookings: int = 0
     remaining_spots: int = 0
     availability_status: str = "available"
+    policy_summary: str | None = None
 
 
 class TimeSlotBulkCreate(BaseModel):

@@ -1,16 +1,24 @@
 ﻿from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import AUTH_ERROR_DETAIL
 from app.api.routes.auth import oauth2_scheme
-from app.core.config import settings
+from app.core.booking_policy import (
+    booking_policy_message,
+    cancellation_policy_message,
+    policy_source_message,
+    resolve_policy_for_sport,
+    resolve_policy_for_timeslot,
+)
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
+from app.models.sport import Sport
 from app.models.timeslot import TimeSlot
 from app.schemas.booking import BookingCreate, BookingDetailPublic, BookingPolicyPublic, BookingPublic
 
@@ -32,7 +40,7 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
         raise HTTPException(status_code=401, detail=AUTH_ERROR_DETAIL)
 
 
-def count_confirmed_bookings(db: Session, timeslot_id) -> int:
+def count_confirmed_bookings(db: Session, timeslot_id: UUID) -> int:
     return int(
         db.execute(
             select(func.count(Booking.id)).where(
@@ -43,46 +51,47 @@ def count_confirmed_bookings(db: Session, timeslot_id) -> int:
     )
 
 
-def booking_cutoff_delta() -> timedelta:
-    return timedelta(minutes=settings.BOOKING_MIN_LEAD_MINUTES)
+def booking_cutoff_delta(timeslot: TimeSlot) -> timedelta:
+    policy = resolve_policy_for_timeslot(timeslot)
+    return timedelta(minutes=policy.min_booking_lead_minutes)
 
 
-def cancellation_cutoff_delta() -> timedelta:
-    return timedelta(minutes=settings.CANCELLATION_MIN_LEAD_MINUTES)
+def cancellation_cutoff_delta(timeslot: TimeSlot) -> timedelta:
+    policy = resolve_policy_for_timeslot(timeslot)
+    return timedelta(minutes=policy.cancellation_min_lead_minutes)
 
 
-def booking_policy_message() -> str:
-    return f"Las reservas deben hacerse con al menos {settings.BOOKING_MIN_LEAD_MINUTES} minutos de anticipación."
-
-
-def cancellation_policy_message() -> str:
-    return f"Las cancelaciones se permiten hasta {settings.CANCELLATION_MIN_LEAD_MINUTES} minutos antes del inicio del turno."
-
-
-def booking_policy_payload() -> BookingPolicyPublic:
+def booking_policy_payload(sport: Sport | None = None) -> BookingPolicyPublic:
+    policy = resolve_policy_for_sport(sport)
     return BookingPolicyPublic(
-        min_booking_lead_minutes=settings.BOOKING_MIN_LEAD_MINUTES,
-        cancellation_min_lead_minutes=settings.CANCELLATION_MIN_LEAD_MINUTES,
-        booking_message=booking_policy_message(),
-        cancellation_message=cancellation_policy_message(),
+        sport_id=policy.sport_id,
+        sport_name=policy.sport_name,
+        uses_default_policy=policy.uses_default_policy,
+        min_booking_lead_minutes=policy.min_booking_lead_minutes,
+        cancellation_min_lead_minutes=policy.cancellation_min_lead_minutes,
+        booking_message=booking_policy_message(policy),
+        cancellation_message=cancellation_policy_message(policy),
+        admin_summary=policy_source_message(policy),
     )
 
 
 def validate_booking_window(timeslot: TimeSlot, now: datetime) -> None:
+    policy = resolve_policy_for_timeslot(timeslot)
     if timeslot.starts_at <= now:
         raise HTTPException(status_code=409, detail=BOOKING_EXPIRED_DETAIL)
-    if timeslot.starts_at < now + booking_cutoff_delta():
-        raise HTTPException(status_code=409, detail=booking_policy_message())
+    if timeslot.starts_at < now + timedelta(minutes=policy.min_booking_lead_minutes):
+        raise HTTPException(status_code=409, detail=booking_policy_message(policy))
 
 
 def derive_availability_status(timeslot: TimeSlot, confirmed_bookings: int, now: datetime) -> str:
     remaining_spots = max(timeslot.capacity - confirmed_bookings, 0)
+    policy = resolve_policy_for_timeslot(timeslot)
 
     if not timeslot.is_active or not timeslot.court.is_active:
         return "inactive"
     if timeslot.starts_at <= now:
         return "expired"
-    if timeslot.starts_at < now + booking_cutoff_delta():
+    if timeslot.starts_at < now + timedelta(minutes=policy.min_booking_lead_minutes):
         return "booking_closed"
     if remaining_spots <= 0:
         return "full"
@@ -95,7 +104,8 @@ def serialize_booking_detail(booking: Booking, db: Session, now: datetime | None
     now = now or datetime.now(timezone.utc)
     confirmed_bookings = count_confirmed_bookings(db, booking.timeslot.id)
     remaining_spots = max(booking.timeslot.capacity - confirmed_bookings, 0)
-    cancellation_deadline = booking.timeslot.starts_at - cancellation_cutoff_delta()
+    policy = resolve_policy_for_timeslot(booking.timeslot)
+    cancellation_deadline = booking.timeslot.starts_at - timedelta(minutes=policy.cancellation_min_lead_minutes)
     can_cancel = (
         booking.status == "confirmed"
         and booking.timeslot.starts_at > now
@@ -113,7 +123,8 @@ def serialize_booking_detail(booking: Booking, db: Session, now: datetime | None
             "updated_at": booking.updated_at,
             "can_cancel": can_cancel,
             "cancellation_deadline": cancellation_deadline,
-            "cancellation_policy_message": cancellation_policy_message(),
+            "cancellation_policy_message": cancellation_policy_message(policy),
+            "booking_policy_summary": policy_source_message(policy),
             "timeslot": {
                 "id": booking.timeslot.id,
                 "court_id": booking.timeslot.court_id,
@@ -143,6 +154,8 @@ def serialize_booking_detail(booking: Booking, db: Session, now: datetime | None
                         "id": booking.timeslot.court.sport.id,
                         "name": booking.timeslot.court.sport.name,
                         "description": booking.timeslot.court.sport.description,
+                        "booking_min_lead_minutes": booking.timeslot.court.sport.booking_min_lead_minutes,
+                        "cancellation_min_lead_minutes": booking.timeslot.court.sport.cancellation_min_lead_minutes,
                     },
                 },
             },
@@ -151,15 +164,21 @@ def serialize_booking_detail(booking: Booking, db: Session, now: datetime | None
 
 
 @router.get("/policies", response_model=BookingPolicyPublic)
-def get_booking_policies():
-    return booking_policy_payload()
+def get_booking_policies(
+    sport_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    sport = db.get(Sport, sport_id) if sport_id else None
+    if sport_id and sport is None:
+        raise HTTPException(status_code=404, detail="Deporte no encontrado")
+    return booking_policy_payload(sport)
 
 
 @router.post("", response_model=BookingPublic, status_code=201)
 def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     timeslot = db.execute(
         select(TimeSlot)
-        .options(joinedload(TimeSlot.court))
+        .options(joinedload(TimeSlot.court).joinedload(Court.sport))
         .where(TimeSlot.id == payload.timeslot_id)
     ).scalar_one_or_none()
 
@@ -225,7 +244,7 @@ def list_bookings(db: Session = Depends(get_db), user_id: str = Depends(get_curr
 def cancel_booking(booking_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     booking = db.execute(
         select(Booking)
-        .options(joinedload(Booking.timeslot))
+        .options(joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport))
         .where(
             Booking.id == booking_id,
             Booking.user_id == user_id,
@@ -238,11 +257,12 @@ def cancel_booking(booking_id: str, db: Session = Depends(get_db), user_id: str 
     if booking.status == "cancelled":
         raise HTTPException(status_code=409, detail=BOOKING_ALREADY_CANCELLED_DETAIL)
 
+    policy = resolve_policy_for_timeslot(booking.timeslot)
     now = datetime.now(timezone.utc)
     if booking.timeslot.starts_at <= now:
         raise HTTPException(status_code=409, detail=BOOKING_EXPIRED_DETAIL)
-    if booking.timeslot.starts_at - cancellation_cutoff_delta() <= now:
-        raise HTTPException(status_code=409, detail=cancellation_policy_message())
+    if booking.timeslot.starts_at - timedelta(minutes=policy.cancellation_min_lead_minutes) <= now:
+        raise HTTPException(status_code=409, detail=cancellation_policy_message(policy))
 
     booking.status = "cancelled"
     booking.updated_at = now

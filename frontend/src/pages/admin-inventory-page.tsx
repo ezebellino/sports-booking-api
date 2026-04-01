@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AdminNav } from "../components/admin-nav";
+import { AdminSportPolicies } from "../components/admin-sport-policies";
 import { AppHeader } from "../components/app-header";
 import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
@@ -361,8 +362,8 @@ export function AdminInventoryPage() {
       <section className="space-y-6">
         <SectionTitle
           eyebrow="Admin"
-          title="Gestión de sedes y canchas"
-          description="Cargá la estructura base del complejo, organizá qué deporte aplica en cada sede y mantené cada cancha lista para la operación diaria."
+          title="Gestión de sedes, canchas y políticas"
+          description="Cargá la estructura base del complejo, organizá qué deporte aplica en cada sede y definí ventanas de reserva y cancelación más claras para cada disciplina."
         />
 
         <AdminNav />
@@ -529,6 +530,8 @@ export function AdminInventoryPage() {
           </div>
 
           <div className="space-y-4">
+            <AdminSportPolicies />
+
             <div className="shell-card p-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
@@ -819,4 +822,7 @@ function Feedback({ tone, message }: { tone: "error" | "success"; message: strin
     </div>
   );
 }
+
+
+
 

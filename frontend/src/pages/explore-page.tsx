@@ -20,7 +20,7 @@ import { AppHeader } from "../components/app-header";
 import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
-import { api, type TimeSlot } from "../lib/api";
+import { api, type BookingPolicy, type TimeSlot } from "../lib/api";
 import { currency, dateInputDefault, dateLabel, localDateBounds, timeZoneSummary } from "../lib/format";
 import { useAuth } from "../modules/auth/auth-context";
 
@@ -37,7 +37,10 @@ export function ExplorePage() {
   const selectedCourtId = searchParams.get("court");
 
   const sportsQuery = useQuery({ queryKey: ["sports"], queryFn: api.listSports });
-  const policiesQuery = useQuery({ queryKey: ["booking-policies"], queryFn: api.listBookingPolicies });
+  const policiesQuery = useQuery({
+    queryKey: ["booking-policies", selectedSportId],
+    queryFn: () => api.listBookingPolicies(selectedSportId),
+  });
   const venuesQuery = useQuery({
     queryKey: ["venues", selectedSportId],
     queryFn: () => api.listVenues(selectedSportId),
@@ -141,9 +144,12 @@ export function ExplorePage() {
           <div className="shell-card flex items-start gap-3 p-4 text-sm text-slate-600">
             <CalendarClock className="mt-0.5 text-skyline" size={18} />
             <div>
-              <p className="font-semibold text-slate-900">Política actual de reserva</p>
+              <p className="font-semibold text-slate-900">
+                {selectedSport ? `Política vigente para ${selectedSport.name}` : "Política general de reserva"}
+              </p>
               <p className="mt-1">{policiesQuery.data.booking_message}</p>
               <p className="mt-1">{policiesQuery.data.cancellation_message}</p>
+              <p className="mt-2 text-xs font-medium text-slate-400">{policiesQuery.data.admin_summary}</p>
             </div>
           </div>
         ) : null}
@@ -207,7 +213,7 @@ export function ExplorePage() {
             <section className="shell-card p-5">
               <FilterTitle icon={MapPin} title="2. Sede" subtitle="Filtrada según el deporte elegido" />
               {!selectedSportId ? (
-                <StepHint message="Elegí un deporte para ver solo las sedes que aplican a esa búsqueda." />
+                <StepHint message="Elegí un deporte para ver solo las sedes que aplican a esa búsqueda y su política operativa." />
               ) : venuesQuery.isLoading ? (
                 <LoadingCard label="Buscando sedes..." />
               ) : venuesQuery.data?.length ? (
@@ -320,7 +326,10 @@ export function ExplorePage() {
                                 <Clock3 size={16} />
                                 <span>{dateLabel(slot.starts_at, venue?.timezone)}</span>
                               </div>
-                              <p className="mt-2 text-sm text-slate-500">{availabilityMessage(slot, policiesQuery.data?.booking_message)}</p>
+                              <p className="mt-2 text-sm text-slate-500">{availabilityMessage(slot, policiesQuery.data)}</p>
+                              {slot.policy_summary ? (
+                                <p className="mt-1 text-xs font-medium text-slate-400">{slot.policy_summary}</p>
+                              ) : null}
                               <p className="mt-1 text-xs font-medium text-slate-400">
                                 Hora local de la sede: {timeZoneSummary(venue?.timezone)}
                               </p>
@@ -455,13 +464,13 @@ function availabilityLabel(slot: TimeSlot) {
     case "expired":
       return "Vencido";
     case "booking_closed":
-      return "Cierre cercano";
+      return "Fuera de ventana";
     default:
       return "Disponible";
   }
 }
 
-function availabilityMessage(slot: TimeSlot, bookingPolicyMessage?: string) {
+function availabilityMessage(slot: TimeSlot, policy?: BookingPolicy) {
   switch (slot.availability_status) {
     case "few_left":
       return `Quedan ${slot.remaining_spots} lugar${slot.remaining_spots === 1 ? "" : "es"}.`;
@@ -472,7 +481,7 @@ function availabilityMessage(slot: TimeSlot, bookingPolicyMessage?: string) {
     case "expired":
       return "Este turno ya pasó y queda solo como referencia.";
     case "booking_closed":
-      return bookingPolicyMessage ?? "La ventana para reservar este turno ya está cerrada.";
+      return policy?.booking_message ?? "La ventana para reservar este turno ya está cerrada.";
     default:
       return `Hay ${slot.remaining_spots} lugares disponibles en este turno.`;
   }
@@ -487,7 +496,7 @@ function buttonLabel(slot: TimeSlot) {
     case "expired":
       return "Vencido";
     case "booking_closed":
-      return "Fuera de política";
+      return "Fuera de ventana";
     default:
       return "Reservar";
   }

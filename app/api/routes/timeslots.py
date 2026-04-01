@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import require_admin
-from app.core.config import settings
+from app.core.booking_policy import policy_source_message, resolve_policy_for_timeslot
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
@@ -21,8 +21,9 @@ TIMESLOT_NOT_FOUND_DETAIL = "Turno no encontrado"
 TIMESLOT_CAPACITY_CONFLICT_DETAIL = "La capacidad no puede quedar por debajo de las reservas confirmadas"
 
 
-def booking_cutoff_delta() -> timedelta:
-    return timedelta(minutes=settings.BOOKING_MIN_LEAD_MINUTES)
+def booking_cutoff_delta(timeslot: TimeSlot) -> timedelta:
+    policy = resolve_policy_for_timeslot(timeslot)
+    return timedelta(minutes=policy.min_booking_lead_minutes)
 
 
 def serialize_timeslot(timeslot: TimeSlot, confirmed_bookings: int) -> TimeSlotPublic:
@@ -33,7 +34,7 @@ def serialize_timeslot(timeslot: TimeSlot, confirmed_bookings: int) -> TimeSlotP
         availability_status = "inactive"
     elif timeslot.starts_at <= now:
         availability_status = "expired"
-    elif timeslot.starts_at < now + booking_cutoff_delta():
+    elif timeslot.starts_at < now + booking_cutoff_delta(timeslot):
         availability_status = "booking_closed"
     elif remaining_spots <= 0:
         availability_status = "full"
@@ -54,6 +55,7 @@ def serialize_timeslot(timeslot: TimeSlot, confirmed_bookings: int) -> TimeSlotP
             "confirmed_bookings": confirmed_bookings,
             "remaining_spots": remaining_spots,
             "availability_status": availability_status,
+            "policy_summary": policy_source_message(resolve_policy_for_timeslot(timeslot)),
         }
     )
 
@@ -75,7 +77,9 @@ def create_timeslot(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    court = db.get(Court, payload.court_id)
+    court = db.execute(
+        select(Court).options(joinedload(Court.sport)).where(Court.id == payload.court_id)
+    ).scalar_one_or_none()
     if not court:
         raise HTTPException(status_code=400, detail=COURT_NOT_FOUND_DETAIL)
     if not court.is_active and payload.is_active:
@@ -120,7 +124,7 @@ def list_timeslots(
         db.query(TimeSlot, func.coalesce(confirmed_bookings_subquery.c.confirmed_bookings, 0).label("confirmed_bookings"))
         .join(Court, Court.id == TimeSlot.court_id)
         .outerjoin(confirmed_bookings_subquery, confirmed_bookings_subquery.c.timeslot_id == TimeSlot.id)
-        .options(joinedload(TimeSlot.court))
+        .options(joinedload(TimeSlot.court).joinedload(Court.sport))
     )
 
     if court_id:
@@ -143,7 +147,7 @@ def update_timeslot(
 ):
     timeslot = db.execute(
         select(TimeSlot)
-        .options(joinedload(TimeSlot.court))
+        .options(joinedload(TimeSlot.court).joinedload(Court.sport))
         .where(TimeSlot.id == timeslot_id)
     ).scalar_one_or_none()
     if not timeslot:
