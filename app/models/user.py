@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,6 +28,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String(20), nullable=False, default="user", server_default="user", index=True
     )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     whatsapp_number: Mapped[Optional[str]] = mapped_column(
         String(32), nullable=True
     )
@@ -43,3 +46,4 @@ class User(Base):
     )
 
     bookings = relationship("Booking", back_populates="user", cascade="all, delete-orphan")
+    organization = relationship("Organization", back_populates="users")

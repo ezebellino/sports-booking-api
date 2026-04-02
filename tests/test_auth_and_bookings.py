@@ -1,6 +1,7 @@
 ﻿from datetime import datetime, timedelta, timezone
 
 from app.models.court import Court
+from app.models.organization import Organization
 from app.models.sport import Sport
 from app.models.timeslot import TimeSlot
 from app.models.user import User
@@ -30,7 +31,20 @@ def register_and_login(client, email: str, password: str, full_name: str = "Test
     return login_response.json()["access_token"]
 
 
+def get_default_organization(db_session) -> Organization:
+    organization = db_session.query(Organization).filter(Organization.slug == "complejo-demo").first()
+    if organization:
+        return organization
+
+    organization = Organization(name="Complejo Demo", slug="complejo-demo", is_active=True)
+    db_session.add(organization)
+    db_session.commit()
+    db_session.refresh(organization)
+    return organization
+
+
 def seed_timeslot(db_session, *, capacity: int = 1) -> TimeSlot:
+    organization = get_default_organization(db_session)
     sport = Sport(name="Padel", description="Partidos rápidos")
     db_session.add(sport)
     db_session.flush()
@@ -40,6 +54,7 @@ def seed_timeslot(db_session, *, capacity: int = 1) -> TimeSlot:
         address="Av. Siempre Viva 123",
         timezone="America/Argentina/Buenos_Aires",
         allowed_sport_id=sport.id,
+        organization_id=organization.id,
     )
     db_session.add(venue)
     db_session.flush()
@@ -50,6 +65,7 @@ def seed_timeslot(db_session, *, capacity: int = 1) -> TimeSlot:
         name="Cancha 1",
         indoor=True,
         is_active=True,
+        organization_id=organization.id,
     )
     db_session.add(court)
     db_session.flush()
@@ -62,6 +78,7 @@ def seed_timeslot(db_session, *, capacity: int = 1) -> TimeSlot:
         capacity=capacity,
         price=12000,
         is_active=True,
+        organization_id=organization.id,
     )
     db_session.add(timeslot)
     db_session.commit()
@@ -94,6 +111,7 @@ def test_register_login_me_and_refresh_flow(client):
     assert me_response.status_code == 200
     assert me_response.json()["full_name"] == "Player One"
     assert me_response.json()["role"] == "user"
+    assert me_response.json()["organization_slug"] == "complejo-demo"
 
     refresh_response = client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
     assert refresh_response.status_code == 200
@@ -152,6 +170,7 @@ def test_admin_bulk_create_timeslots_for_multiple_courts(client, db_session):
         name="Cancha 2",
         indoor=False,
         is_active=True,
+        organization_id=seed.organization_id,
     )
     db_session.add(second_court)
     db_session.commit()
@@ -268,6 +287,7 @@ def test_bulk_create_uses_end_time_as_last_allowed_start(client, db_session):
 
 
 def test_non_admin_cannot_manage_venues_or_courts(client, db_session):
+    organization = get_default_organization(db_session)
     sport = Sport(name="Tenis", description="Singles y dobles")
     db_session.add(sport)
     db_session.commit()
@@ -292,6 +312,7 @@ def test_non_admin_cannot_manage_venues_or_courts(client, db_session):
         address="Base 100",
         timezone="America/Argentina/Buenos_Aires",
         allowed_sport_id=sport.id,
+        organization_id=organization.id,
     )
     db_session.add(venue)
     db_session.commit()
@@ -962,4 +983,42 @@ def test_admin_metrics_aggregates_operational_summary(client, db_session):
     assert payload["summary"]["estimated_revenue"] == 12000.0
     assert payload["by_sport"][0]["name"] == "Padel"
     assert payload["by_venue"][0]["name"] == "Complejo Norte"
+
+
+def test_public_venue_listing_uses_default_organization_scope(client, db_session):
+    register_and_login(client, "tenant-owner@example.com", "password123", "Tenant Owner")
+
+    default_org = get_default_organization(db_session)
+
+    sport = Sport(name="Hockey", description="Canchas y entrenamiento")
+    db_session.add(sport)
+    db_session.flush()
+
+    other_org = Organization(name="Complejo Sur", slug="complejo-sur", is_active=True)
+    db_session.add(other_org)
+    db_session.flush()
+
+    default_venue = Venue(
+        name="Sede Demo",
+        address="Norte 123",
+        timezone="America/Argentina/Buenos_Aires",
+        allowed_sport_id=sport.id,
+        organization_id=default_org.id,
+    )
+    other_venue = Venue(
+        name="Sede Sur",
+        address="Sur 456",
+        timezone="America/Argentina/Buenos_Aires",
+        allowed_sport_id=sport.id,
+        organization_id=other_org.id,
+    )
+    db_session.add(default_venue)
+    db_session.add(other_venue)
+    db_session.commit()
+
+    response = client.get("/venues?limit=100")
+    assert response.status_code == 200
+    names = [venue["name"] for venue in response.json()]
+    assert "Sede Demo" in names
+    assert "Sede Sur" not in names
 

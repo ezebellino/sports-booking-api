@@ -172,13 +172,17 @@ def get_booking_policies(
 
 @router.post("", response_model=BookingPublic, status_code=201)
 def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
     timeslot = db.execute(
         select(TimeSlot)
         .options(
             joinedload(TimeSlot.court).joinedload(Court.sport),
             joinedload(TimeSlot.court).joinedload(Court.venue),
         )
-        .where(TimeSlot.id == payload.timeslot_id)
+        .where(TimeSlot.id == payload.timeslot_id, TimeSlot.organization_id == user.organization_id)
     ).scalar_one_or_none()
 
     if not timeslot or not timeslot.is_active:
@@ -222,6 +226,7 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
 
     booking = Booking(
         user_id=user_id,
+        organization_id=user.organization_id,
         timeslot_id=timeslot.id,
         status="confirmed",
         created_at=now,
@@ -245,13 +250,16 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
 @router.get("", response_model=list[BookingDetailPublic])
 def list_bookings(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     now = datetime.now(timezone.utc)
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
     bookings = db.execute(
         select(Booking)
         .options(
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.venue),
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
         )
-        .where(Booking.user_id == user_id)
+        .where(Booking.user_id == user_id, Booking.organization_id == user.organization_id)
         .order_by(Booking.updated_at.desc(), Booking.created_at.desc())
     ).scalars().all()
     return [serialize_booking_detail(booking, db, now) for booking in bookings]
@@ -259,6 +267,9 @@ def list_bookings(db: Session = Depends(get_db), user_id: str = Depends(get_curr
 
 @router.patch("/{booking_id}/cancel", response_model=BookingPublic)
 def cancel_booking(booking_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
     booking = db.execute(
         select(Booking)
         .options(
@@ -269,6 +280,7 @@ def cancel_booking(booking_id: str, db: Session = Depends(get_db), user_id: str 
         .where(
             Booking.id == booking_id,
             Booking.user_id == user_id,
+            Booking.organization_id == user.organization_id,
         )
     ).scalar_one_or_none()
 

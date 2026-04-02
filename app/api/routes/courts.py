@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import require_admin
+from app.api.deps.auth import get_request_organization, require_admin
 from app.db.session import get_db
 from app.models.court import Court
+from app.models.organization import Organization
 from app.models.sport import Sport
 from app.models.timeslot import TimeSlot
 from app.models.user import User
@@ -23,9 +24,9 @@ VENUE_SPORT_MISMATCH_DETAIL = "La sede elegida solo permite otro deporte"
 def create_court(
     payload: CourtCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
-    venue = db.get(Venue, payload.venue_id)
+    venue = db.query(Venue).filter(Venue.id == payload.venue_id, Venue.organization_id == current_admin.organization_id).first()
     if not venue:
         raise HTTPException(status_code=400, detail=VENUE_NOT_FOUND_DETAIL)
     if not db.get(Sport, payload.sport_id):
@@ -34,6 +35,7 @@ def create_court(
         raise HTTPException(status_code=400, detail=VENUE_SPORT_MISMATCH_DETAIL)
 
     court = Court(
+        organization_id=current_admin.organization_id,
         venue_id=payload.venue_id,
         sport_id=payload.sport_id,
         name=payload.name,
@@ -49,12 +51,13 @@ def create_court(
 @router.get("", response_model=list[CourtPublic])
 def list_courts(
     db: Session = Depends(get_db),
+    organization: Organization = Depends(get_request_organization),
     venue_id: str | None = None,
     sport_id: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    query = db.query(Court)
+    query = db.query(Court).filter(Court.organization_id == organization.id)
     if venue_id:
         query = query.filter(Court.venue_id == venue_id)
     if sport_id:
@@ -67,16 +70,16 @@ def update_court(
     court_id: str,
     payload: CourtUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
-    court = db.get(Court, court_id)
+    court = db.query(Court).filter(Court.id == court_id, Court.organization_id == current_admin.organization_id).first()
     if not court:
         raise HTTPException(status_code=404, detail=COURT_NOT_FOUND_DETAIL)
 
     next_venue_id = payload.venue_id or court.venue_id
     next_sport_id = payload.sport_id or court.sport_id
 
-    venue = db.get(Venue, next_venue_id)
+    venue = db.query(Venue).filter(Venue.id == next_venue_id, Venue.organization_id == current_admin.organization_id).first()
     if not venue:
         raise HTTPException(status_code=400, detail=VENUE_NOT_FOUND_DETAIL)
     if not db.get(Sport, next_sport_id):
@@ -104,9 +107,9 @@ def update_court(
 def delete_court(
     court_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
-    court = db.get(Court, court_id)
+    court = db.query(Court).filter(Court.id == court_id, Court.organization_id == current_admin.organization_id).first()
     if not court:
         raise HTTPException(status_code=404, detail=COURT_NOT_FOUND_DETAIL)
     if court.timeslots:

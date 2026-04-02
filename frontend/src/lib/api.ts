@@ -7,6 +7,9 @@ export type User = {
   email: string;
   full_name: string | null;
   role: "admin" | "user";
+  organization_id: string | null;
+  organization_name: string | null;
+  organization_slug: string | null;
   whatsapp_number: string | null;
   whatsapp_opt_in: boolean;
 };

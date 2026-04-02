@@ -1,3 +1,4 @@
+from app.models.organization import Organization  # noqa
 from app.models.user import User  # noqa
 from app.models.sport import Sport  # noqa
 from app.models.venue import Venue  # noqa

@@ -23,7 +23,13 @@ INACTIVE_COURT_BULK_DETAIL = "No se pueden generar turnos sobre canchas inactiva
 
 @router.get("/users", response_model=list[UserPublic])
 def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    users = db.query(User).order_by(User.created_at.desc()).all()
+    current_admin = _
+    users = (
+        db.query(User)
+        .filter(User.organization_id == current_admin.organization_id)
+        .order_by(User.created_at.desc())
+        .all()
+    )
     return users
 
 
@@ -73,13 +79,14 @@ def get_admin_metrics(
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
     stmt = select(TimeSlot).options(
         joinedload(TimeSlot.court).joinedload(Court.sport),
         joinedload(TimeSlot.court).joinedload(Court.venue),
         joinedload(TimeSlot.bookings),
     )
+    stmt = stmt.where(TimeSlot.organization_id == current_admin.organization_id)
 
     if date_from is not None:
         stmt = stmt.where(TimeSlot.starts_at >= date_from)
@@ -158,9 +165,13 @@ def get_admin_metrics(
 def bulk_create_timeslots(
     payload: TimeSlotBulkCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
-    courts = db.query(Court).filter(Court.id.in_(payload.court_ids)).all()
+    courts = (
+        db.query(Court)
+        .filter(Court.id.in_(payload.court_ids), Court.organization_id == current_admin.organization_id)
+        .all()
+    )
     found_court_ids = {court.id for court in courts}
     missing_court_ids = [str(court_id) for court_id in payload.court_ids if court_id not in found_court_ids]
     if missing_court_ids:
@@ -201,6 +212,7 @@ def bulk_create_timeslots(
                 )
             else:
                 timeslot = TimeSlot(
+                    organization_id=current_admin.organization_id,
                     court_id=court.id,
                     starts_at=current_start,
                     ends_at=current_end,

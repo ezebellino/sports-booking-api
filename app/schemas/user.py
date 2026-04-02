@@ -43,5 +43,8 @@ class UserPublic(BaseModel):
     email: EmailStr
     full_name: str | None = None
     role: UserRole
+    organization_id: UUID | None = None
+    organization_name: str | None = None
+    organization_slug: str | None = None
     whatsapp_number: str | None = None
     whatsapp_opt_in: bool

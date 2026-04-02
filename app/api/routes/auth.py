@@ -11,12 +11,28 @@ from app.core.security import (
 )
 from app.core.whatsapp import normalize_whatsapp_number
 from app.db.session import get_db
+from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.auth import RefreshRequest, TokenPair
 from app.schemas.user import UserCreate, UserPublic, UserUpdate
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+DEFAULT_ORGANIZATION_SLUG = "complejo-demo"
+
+
+def get_default_organization(db: Session) -> Organization:
+    organization = db.query(Organization).filter(Organization.slug == DEFAULT_ORGANIZATION_SLUG).first()
+    if not organization:
+        organization = db.query(Organization).order_by(Organization.created_at.asc()).first()
+    if not organization:
+        organization = Organization(name="Complejo Demo", slug=DEFAULT_ORGANIZATION_SLUG, is_active=True)
+        db.add(organization)
+        db.commit()
+        db.refresh(organization)
+    return organization
 
 
 def serialize_user(user: User) -> UserPublic:
@@ -25,6 +41,9 @@ def serialize_user(user: User) -> UserPublic:
         email=user.email,
         full_name=user.full_name,
         role=user.role,
+        organization_id=user.organization_id,
+        organization_name=user.organization.name if user.organization else None,
+        organization_slug=user.organization.slug if user.organization else None,
         whatsapp_number=user.whatsapp_number,
         whatsapp_opt_in=user.whatsapp_opt_in,
     )
@@ -52,11 +71,14 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
     whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
 
+    default_organization = get_default_organization(db)
+
     user = User(
         email=payload.email,
         full_name=payload.full_name,
         hashed_password=get_password_hash(payload.password),
         role="user",
+        organization_id=default_organization.id,
         whatsapp_number=whatsapp_number,
         whatsapp_opt_in=whatsapp_opt_in,
     )
@@ -72,7 +94,14 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
-    access = create_access_token(subject=str(user.id), extra={"email": user.email, "role": user.role})
+    access = create_access_token(
+        subject=str(user.id),
+        extra={
+            "email": user.email,
+            "role": user.role,
+            "organization_id": str(user.organization_id) if user.organization_id else None,
+        },
+    )
     refresh = create_refresh_token(subject=str(user.id))
     return TokenPair(access_token=access, refresh_token=refresh)
 
@@ -92,7 +121,14 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    access = create_access_token(subject=str(user.id), extra={"email": user.email, "role": user.role})
+    access = create_access_token(
+        subject=str(user.id),
+        extra={
+            "email": user.email,
+            "role": user.role,
+            "organization_id": str(user.organization_id) if user.organization_id else None,
+        },
+    )
     new_refresh = create_refresh_token(subject=str(user.id))
     return TokenPair(access_token=access, refresh_token=new_refresh)
 

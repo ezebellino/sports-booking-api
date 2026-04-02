@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps.auth import require_admin
+from app.api.deps.auth import get_request_organization, require_admin
 from app.core.booking_policy import policy_source_message, resolve_policy_for_timeslot
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
+from app.models.organization import Organization
 from app.models.timeslot import TimeSlot
 from app.models.user import User
 from app.schemas.timeslot import TimeSlotCreate, TimeSlotPublic, TimeSlotUpdate
@@ -75,10 +76,12 @@ def count_confirmed_bookings(db: Session, timeslot_id) -> int:
 def create_timeslot(
     payload: TimeSlotCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
     court = db.execute(
-        select(Court).options(joinedload(Court.sport)).where(Court.id == payload.court_id)
+        select(Court)
+        .options(joinedload(Court.sport))
+        .where(Court.id == payload.court_id, Court.organization_id == current_admin.organization_id)
     ).scalar_one_or_none()
     if not court:
         raise HTTPException(status_code=400, detail=COURT_NOT_FOUND_DETAIL)
@@ -86,6 +89,7 @@ def create_timeslot(
         raise HTTPException(status_code=409, detail=INACTIVE_COURT_TIMESLOT_DETAIL)
 
     timeslot = TimeSlot(
+        organization_id=current_admin.organization_id,
         court_id=payload.court_id,
         starts_at=payload.starts_at,
         ends_at=payload.ends_at,
@@ -104,6 +108,7 @@ def create_timeslot(
 @router.get("", response_model=list[TimeSlotPublic])
 def list_timeslots(
     db: Session = Depends(get_db),
+    organization: Organization = Depends(get_request_organization),
     court_id: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
@@ -125,6 +130,7 @@ def list_timeslots(
         .join(Court, Court.id == TimeSlot.court_id)
         .outerjoin(confirmed_bookings_subquery, confirmed_bookings_subquery.c.timeslot_id == TimeSlot.id)
         .options(joinedload(TimeSlot.court).joinedload(Court.sport))
+        .filter(TimeSlot.organization_id == organization.id)
     )
 
     if court_id:
@@ -143,12 +149,12 @@ def update_timeslot(
     timeslot_id: str,
     payload: TimeSlotUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
     timeslot = db.execute(
         select(TimeSlot)
         .options(joinedload(TimeSlot.court).joinedload(Court.sport))
-        .where(TimeSlot.id == timeslot_id)
+        .where(TimeSlot.id == timeslot_id, TimeSlot.organization_id == current_admin.organization_id)
     ).scalar_one_or_none()
     if not timeslot:
         raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
@@ -174,9 +180,9 @@ def update_timeslot(
 def delete_timeslot(
     timeslot_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
-    timeslot = db.get(TimeSlot, timeslot_id)
+    timeslot = db.query(TimeSlot).filter(TimeSlot.id == timeslot_id, TimeSlot.organization_id == current_admin.organization_id).first()
     if not timeslot:
         raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
 
