@@ -53,7 +53,7 @@ export function AdminWhatsappPage() {
         <SectionTitle
           eyebrow="Admin"
           title="Operación de WhatsApp"
-          description="Controlá si la integración está lista para producción, qué templates usa el sistema y qué falta completar antes de enviar mensajes reales a los clientes."
+          description="Controlá si la integración de este complejo está lista para producción, qué templates usa el sistema y qué falta completar antes de enviar mensajes reales a los clientes."
         />
 
         <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">

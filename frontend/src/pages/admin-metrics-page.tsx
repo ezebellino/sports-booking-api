@@ -124,7 +124,7 @@ export function AdminMetricsPage() {
         <SectionTitle
           eyebrow="Admin"
           title="Métricas operativas"
-          description="Seguí la demanda del complejo por rango de fechas, con foco en ocupación, cancelaciones y facturación estimada por sede y por deporte."
+          description="Seguí la demanda de este complejo por rango de fechas, con foco en ocupación, cancelaciones y facturación estimada por sede y por deporte."
         />
 
         <div className="shell-card grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]">
@@ -217,7 +217,7 @@ export function AdminMetricsPage() {
             </div>
           </>
         ) : (
-          <EmptyState title="Todavía no hay métricas para mostrar" description="Probá ampliar el rango de fechas o cargá turnos y reservas para empezar a ver demanda real." />
+          <EmptyState title="Todavía no hay métricas para mostrar" description="Probá ampliar el rango de fechas o cargá turnos y reservas de este complejo para empezar a ver demanda real." />
         )}
       </section>
     </>

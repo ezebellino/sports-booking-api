@@ -402,7 +402,7 @@ export function AdminTimeslotsPage() {
         <SectionTitle
           eyebrow="Admin"
           title="Gestión automática de turnos"
-          description="Generá bloques completos por rango horario, elegí la duración de cada turno y repetí la carga en varias canchas. También podés editar turnos ya creados desde la misma pantalla."
+          description="Generá bloques completos por rango horario para este complejo, elegí la duración de cada turno y repetí la carga en varias canchas. También podés editar turnos ya creados desde la misma pantalla."
         />
 
         <div className="shell-card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -783,7 +783,7 @@ export function AdminTimeslotsPage() {
                   );
                 })
               ) : (
-                <EmptyState title="Todavía no hay turnos para este filtro" description="Podés crear un bloque desde la izquierda o cambiar la fecha y la cancha seleccionada." />
+                <EmptyState title="Todavía no hay turnos para este filtro" description="Podés crear un bloque para este complejo desde la izquierda o cambiar la fecha y la cancha seleccionada." />
               )}
             </div>
           </div>

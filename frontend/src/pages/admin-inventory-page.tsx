@@ -372,7 +372,7 @@ export function AdminInventoryPage() {
         <SectionTitle
           eyebrow="Admin"
           title="Gestión de sedes, canchas y políticas"
-          description="Cargá la estructura base del complejo, organizá qué deporte aplica en cada sede y definí ventanas de reserva y cancelación más claras para cada disciplina."
+          description="Cargá la estructura base de este complejo, organizá qué deporte aplica en cada sede y definí ventanas de reserva y cancelación más claras para cada disciplina."
         />
 
         <AdminNav />
@@ -650,7 +650,7 @@ export function AdminInventoryPage() {
                 </div>
               ) : (
                 <div className="mt-4">
-                  <EmptyState title="Todavía no hay sedes" description="Creá la primera sede para empezar a organizar las canchas del complejo." />
+                  <EmptyState title="Todavía no hay sedes" description="Creá la primera sede de este complejo para empezar a organizar sus canchas." />
                 </div>
               )}
             </div>
@@ -804,7 +804,7 @@ export function AdminInventoryPage() {
                 </div>
               ) : (
                 <div className="mt-4">
-                  <EmptyState title="Todavía no hay canchas" description="Creá una cancha y asignala a una sede para seguir con la carga operativa." />
+                  <EmptyState title="Todavía no hay canchas" description="Creá una cancha y asignala a una sede de este complejo para seguir con la carga operativa." />
                 </div>
               )}
             </div>
