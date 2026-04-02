@@ -1,6 +1,7 @@
 ﻿from datetime import datetime, timedelta, timezone
 
 from app.core.security import get_password_hash
+from app.models.booking import Booking
 from app.models.court import Court
 from app.models.organization import Organization
 from app.models.sport import Sport
@@ -120,23 +121,18 @@ def test_register_login_me_and_refresh_flow(client):
     assert refresh_response.json()["refresh_token"]
 
 
-def test_login_backfills_default_organization_for_legacy_user(client, db_session):
+def test_register_assigns_default_organization(client, db_session):
     organization = get_default_organization(db_session)
-    legacy_user = User(
-        email="legacy@example.com",
-        full_name="Legacy User",
-        hashed_password=get_password_hash("password123"),
-        role="user",
-        organization_id=None,
+
+    register_response = client.post(
+        "/auth/register",
+        json={"email": "legacy@example.com", "password": "password123", "full_name": "Legacy User"},
     )
-    db_session.add(legacy_user)
-    db_session.commit()
+    assert register_response.status_code == 201
 
-    login_response = client.post("/auth/login", data={"username": "legacy@example.com", "password": "password123"})
-    assert login_response.status_code == 200
-
-    db_session.refresh(legacy_user)
-    assert legacy_user.organization_id == organization.id
+    created_user = db_session.query(User).filter(User.email == "legacy@example.com").first()
+    assert created_user is not None
+    assert created_user.organization_id == organization.id
 
 
 def test_admin_route_requires_admin_role(client, db_session):
@@ -1041,4 +1037,212 @@ def test_public_venue_listing_uses_default_organization_scope(client, db_session
     names = [venue["name"] for venue in response.json()]
     assert "Sede Demo" in names
     assert "Sede Sur" not in names
+
+
+def test_core_records_created_through_flows_store_organization_id(client, db_session):
+    organization = get_default_organization(db_session)
+
+    sport = Sport(name="Básquet", description="Media cancha y partidos")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    register_and_login(client, "tenant-admin@example.com", "password123", "Tenant Admin")
+    admin_user = db_session.query(User).filter(User.email == "tenant-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "tenant-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Tenant",
+            "address": "Tenant 123",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert venue_response.status_code == 201
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": venue_response.json()["id"],
+            "sport_id": str(sport.id),
+            "name": "Cancha Tenant",
+            "indoor": True,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert court_response.status_code == 201
+
+    starts_at = datetime.now(timezone.utc) + timedelta(days=2)
+    timeslot_response = client.post(
+        "/timeslots",
+        json={
+            "court_id": court_response.json()["id"],
+            "starts_at": starts_at.isoformat(),
+            "ends_at": (starts_at + timedelta(hours=1)).isoformat(),
+            "capacity": 1,
+            "price": 9000,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert timeslot_response.status_code == 201
+
+    user_token = register_and_login(client, "tenant-player@example.com", "password123", "Tenant Player")
+    booking_response = client.post(
+        "/bookings",
+        json={"timeslot_id": timeslot_response.json()["id"]},
+        headers=auth_headers(user_token),
+    )
+    assert booking_response.status_code == 201
+
+    venue = db_session.get(Venue, venue_response.json()["id"])
+    court = db_session.get(Court, court_response.json()["id"])
+    timeslot = db_session.get(TimeSlot, timeslot_response.json()["id"])
+    booking = db_session.get(Booking, booking_response.json()["id"])
+    user = db_session.query(User).filter(User.email == "tenant-player@example.com").first()
+
+    assert venue.organization_id == organization.id
+    assert court.organization_id == organization.id
+    assert timeslot.organization_id == organization.id
+    assert booking.organization_id == organization.id
+    assert user.organization_id == organization.id
+
+
+def test_admin_tenant_integrity_reports_nulls_and_mismatches(client, db_session):
+    default_org = get_default_organization(db_session)
+    other_org = Organization(name="Complejo Este", slug="complejo-este", is_active=True)
+    db_session.add(other_org)
+    db_session.commit()
+    db_session.refresh(other_org)
+
+    register_and_login(client, "integrity-admin@example.com", "password123", "Integrity Admin")
+    admin_user = db_session.query(User).filter(User.email == "integrity-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    sport = Sport(name="Handball", description="Pruebas multi-tenant")
+    db_session.add(sport)
+    db_session.flush()
+
+    mismatched_venue = Venue(
+        name="Sede Este",
+        address="Mismatch 2",
+        timezone="America/Argentina/Buenos_Aires",
+        allowed_sport_id=sport.id,
+        organization_id=other_org.id,
+    )
+    db_session.add(mismatched_venue)
+    db_session.flush()
+
+    mismatched_court = Court(
+        name="Cancha Mismatch",
+        venue_id=mismatched_venue.id,
+        sport_id=sport.id,
+        indoor=True,
+        is_active=True,
+        organization_id=default_org.id,
+    )
+    db_session.add(mismatched_court)
+    db_session.flush()
+
+    mismatched_timeslot = TimeSlot(
+        court_id=mismatched_court.id,
+        starts_at=datetime.now(timezone.utc) + timedelta(days=3),
+        ends_at=datetime.now(timezone.utc) + timedelta(days=3, hours=1),
+        capacity=2,
+        price=10000,
+        is_active=True,
+        organization_id=other_org.id,
+    )
+    db_session.add(mismatched_timeslot)
+    db_session.flush()
+
+    mismatched_booking_user = User(
+        email="mismatch-user@example.com",
+        full_name="Mismatch User",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+        organization_id=other_org.id,
+    )
+    db_session.add(mismatched_booking_user)
+    db_session.flush()
+
+    mismatched_booking = Booking(
+        user_id=mismatched_booking_user.id,
+        timeslot_id=mismatched_timeslot.id,
+        status="confirmed",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        organization_id=default_org.id,
+    )
+    db_session.add(mismatched_booking)
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "integrity-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    response = client.get("/admin/tenant-integrity", headers=auth_headers(admin_token))
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["counts"]["organizations"] == 2
+    assert payload["counts"]["users_without_organization"] == 0
+    assert payload["counts"]["venues_without_organization"] == 0
+    assert payload["counts"]["courts_without_organization"] == 0
+    assert payload["counts"]["timeslots_without_organization"] == 0
+    assert payload["counts"]["bookings_without_organization"] == 0
+    assert payload["issues"]["court_venue_mismatches"] == 1
+    assert payload["issues"]["timeslot_court_mismatches"] == 1
+    assert payload["issues"]["booking_user_mismatches"] == 1
+    assert payload["issues"]["booking_timeslot_mismatches"] == 1
+    assert payload["ready_for_not_null"] is False
+
+
+def test_admin_tenant_integrity_reports_ready_when_dataset_is_consistent(client, db_session):
+    seed = seed_timeslot(db_session, capacity=2)
+
+    register_and_login(client, "ready-admin@example.com", "password123", "Ready Admin")
+    admin_user = db_session.query(User).filter(User.email == "ready-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "ready-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    user_token = register_and_login(client, "ready-user@example.com", "password123", "Ready User")
+    booking_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(seed.id)},
+        headers=auth_headers(user_token),
+    )
+    assert booking_response.status_code == 201
+
+    response = client.get("/admin/tenant-integrity", headers=auth_headers(admin_token))
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["counts"]["users_without_organization"] == 0
+    assert payload["counts"]["venues_without_organization"] == 0
+    assert payload["counts"]["courts_without_organization"] == 0
+    assert payload["counts"]["timeslots_without_organization"] == 0
+    assert payload["counts"]["bookings_without_organization"] == 0
+    assert payload["issues"]["court_venue_mismatches"] == 0
+    assert payload["issues"]["timeslot_court_mismatches"] == 0
+    assert payload["issues"]["booking_user_mismatches"] == 0
+    assert payload["issues"]["booking_timeslot_mismatches"] == 0
+    assert payload["ready_for_not_null"] is True
 

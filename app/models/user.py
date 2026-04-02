@@ -28,8 +28,8 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String(20), nullable=False, default="user", server_default="user", index=True
     )
-    organization_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=False, index=True
     )
     whatsapp_number: Mapped[Optional[str]] = mapped_column(
         String(32), nullable=True

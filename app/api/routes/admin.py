@@ -2,17 +2,26 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import require_admin
 from app.core.whatsapp import notification_status_payload
+from app.models.organization import Organization
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
 from app.models.timeslot import TimeSlot
 from app.models.user import User
-from app.schemas.admin import AdminMetricsBucket, AdminMetricsPublic, AdminMetricsSummary
+from app.models.venue import Venue
+from app.schemas.admin import (
+    AdminMetricsBucket,
+    AdminMetricsPublic,
+    AdminMetricsSummary,
+    TenantIntegrityCounts,
+    TenantIntegrityIssues,
+    TenantIntegrityPublic,
+)
 from app.schemas.timeslot import TimeSlotBulkCreate, TimeSlotBulkCreateResult, TimeSlotPublic
 from app.schemas.user import UserPublic
 
@@ -41,6 +50,84 @@ def admin_me(current_admin: User = Depends(require_admin)):
 @router.get("/notification-status")
 def get_notification_status(_: User = Depends(require_admin)):
     return notification_status_payload()
+
+
+@router.get("/tenant-integrity", response_model=TenantIntegrityPublic)
+def get_tenant_integrity(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    counts = TenantIntegrityCounts(
+        organizations=int(db.execute(select(func.count(Organization.id))).scalar_one()),
+        users_without_organization=int(
+            db.execute(select(func.count(User.id)).where(User.organization_id.is_(None))).scalar_one()
+        ),
+        venues_without_organization=int(
+            db.execute(select(func.count(Venue.id)).where(Venue.organization_id.is_(None))).scalar_one()
+        ),
+        courts_without_organization=int(
+            db.execute(select(func.count(Court.id)).where(Court.organization_id.is_(None))).scalar_one()
+        ),
+        timeslots_without_organization=int(
+            db.execute(select(func.count(TimeSlot.id)).where(TimeSlot.organization_id.is_(None))).scalar_one()
+        ),
+        bookings_without_organization=int(
+            db.execute(select(func.count(Booking.id)).where(Booking.organization_id.is_(None))).scalar_one()
+        ),
+    )
+
+    issues = TenantIntegrityIssues(
+        court_venue_mismatches=int(
+            db.execute(
+                select(func.count(Court.id))
+                .join(Venue, Venue.id == Court.venue_id)
+                .where(Court.organization_id.is_not(None), Venue.organization_id.is_not(None))
+                .where(Court.organization_id != Venue.organization_id)
+            ).scalar_one()
+        ),
+        timeslot_court_mismatches=int(
+            db.execute(
+                select(func.count(TimeSlot.id))
+                .join(Court, Court.id == TimeSlot.court_id)
+                .where(TimeSlot.organization_id.is_not(None), Court.organization_id.is_not(None))
+                .where(TimeSlot.organization_id != Court.organization_id)
+            ).scalar_one()
+        ),
+        booking_user_mismatches=int(
+            db.execute(
+                select(func.count(Booking.id))
+                .join(User, User.id == Booking.user_id)
+                .where(Booking.organization_id.is_not(None), User.organization_id.is_not(None))
+                .where(Booking.organization_id != User.organization_id)
+            ).scalar_one()
+        ),
+        booking_timeslot_mismatches=int(
+            db.execute(
+                select(func.count(Booking.id))
+                .join(TimeSlot, TimeSlot.id == Booking.timeslot_id)
+                .where(Booking.organization_id.is_not(None), TimeSlot.organization_id.is_not(None))
+                .where(Booking.organization_id != TimeSlot.organization_id)
+            ).scalar_one()
+        ),
+    )
+
+    ready_for_not_null = (
+        counts.users_without_organization == 0
+        and counts.venues_without_organization == 0
+        and counts.courts_without_organization == 0
+        and counts.timeslots_without_organization == 0
+        and counts.bookings_without_organization == 0
+        and issues.court_venue_mismatches == 0
+        and issues.timeslot_court_mismatches == 0
+        and issues.booking_user_mismatches == 0
+        and issues.booking_timeslot_mismatches == 0
+    )
+
+    return TenantIntegrityPublic(
+        counts=counts,
+        issues=issues,
+        ready_for_not_null=ready_for_not_null,
+    )
 
 
 def _empty_bucket(name: str) -> dict:

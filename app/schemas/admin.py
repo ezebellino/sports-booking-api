@@ -33,3 +33,25 @@ class AdminMetricsPublic(BaseModel):
     summary: AdminMetricsSummary
     by_sport: list[AdminMetricsBucket]
     by_venue: list[AdminMetricsBucket]
+
+
+class TenantIntegrityCounts(BaseModel):
+    organizations: int
+    users_without_organization: int
+    venues_without_organization: int
+    courts_without_organization: int
+    timeslots_without_organization: int
+    bookings_without_organization: int
+
+
+class TenantIntegrityIssues(BaseModel):
+    court_venue_mismatches: int
+    timeslot_court_mismatches: int
+    booking_user_mismatches: int
+    booking_timeslot_mismatches: int
+
+
+class TenantIntegrityPublic(BaseModel):
+    counts: TenantIntegrityCounts
+    issues: TenantIntegrityIssues
+    ready_for_not_null: bool
