@@ -16,6 +16,15 @@ type AuthContextValue = {
   loading: boolean;
   login: (input: { email: string; password: string }) => Promise<void>;
   register: (input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
+  onboardOrganization: (input: {
+    organization_name: string;
+    organization_slug?: string | null;
+    admin_full_name: string;
+    admin_email: string;
+    admin_password: string;
+    whatsapp_number?: string | null;
+    whatsapp_opt_in?: boolean;
+  }) => Promise<void>;
   updateProfile: (input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
   logout: () => void;
 };
@@ -65,6 +74,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await login({ email: input.email, password: input.password });
   }
 
+  async function onboardOrganization(input: {
+    organization_name: string;
+    organization_slug?: string | null;
+    admin_full_name: string;
+    admin_email: string;
+    admin_password: string;
+    whatsapp_number?: string | null;
+    whatsapp_opt_in?: boolean;
+  }) {
+    const result = await api.onboardOrganization(input);
+    storeTokens({
+      accessToken: result.access_token,
+      refreshToken: result.refresh_token,
+    });
+    const currentUser = await api.me();
+    setUser(currentUser);
+  }
+
   async function updateProfile(input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) {
     const currentUser = await api.updateMe(input);
     setUser(currentUser);
@@ -84,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         register,
+        onboardOrganization,
         updateProfile,
         logout,
       }}

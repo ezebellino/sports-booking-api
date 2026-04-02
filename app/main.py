@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import health, auth
 from app.api.routes import sports, venues, courts, timeslots, bookings
+from app.api.routes import organizations
 from app.api.routes import admin
 from app.core.config import settings
 
@@ -19,6 +20,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(organizations.router)
 app.include_router(sports.router)
 app.include_router(venues.router)
 app.include_router(courts.router)

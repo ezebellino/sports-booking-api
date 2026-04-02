@@ -14,6 +14,13 @@ export type User = {
   whatsapp_opt_in: boolean;
 };
 
+export type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+};
+
 export type Sport = {
   id: string;
   name: string;
@@ -107,6 +114,14 @@ export type NotificationStatus = {
     detail: string;
     severity: "required" | "optional";
   }>;
+};
+
+export type OrganizationOnboardingResult = {
+  organization: Organization;
+  user_id: string;
+  access_token: string;
+  refresh_token: string;
+  token_type: "bearer";
 };
 
 export type BookingPolicy = {
@@ -264,6 +279,31 @@ export const api = {
 
   updateMe: (input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) =>
     request<User>("/auth/me", {
+      method: "PATCH",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  onboardOrganization: (input: {
+    organization_name: string;
+    organization_slug?: string | null;
+    admin_full_name: string;
+    admin_email: string;
+    admin_password: string;
+    whatsapp_number?: string | null;
+    whatsapp_opt_in?: boolean;
+  }) =>
+    request<OrganizationOnboardingResult>("/organizations/onboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  getCurrentOrganization: () => request<Organization>("/organizations/current", { auth: true }),
+
+  updateCurrentOrganization: (input: { name?: string; slug?: string; is_active?: boolean }) =>
+    request<Organization>("/organizations/current", {
       method: "PATCH",
       auth: true,
       headers: { "Content-Type": "application/json" },

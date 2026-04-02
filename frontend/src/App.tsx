@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./modules/auth/auth-context";
 import { AdminInventoryPage } from "./pages/admin-inventory-page";
 import { AdminMetricsPage } from "./pages/admin-metrics-page";
+import { AdminOrganizationPage } from "./pages/admin-organization-page";
 import { AdminTimeslotsPage } from "./pages/admin-timeslots-page";
 import { AdminWhatsappPage } from "./pages/admin-whatsapp-page";
 import { ExplorePage } from "./pages/explore-page";
@@ -10,6 +11,7 @@ import { HomePage } from "./pages/home-page";
 import { LoginPage } from "./pages/login-page";
 import { MyBookingsPage } from "./pages/my-bookings-page";
 import { RegisterPage } from "./pages/register-page";
+import { StartComplexPage } from "./pages/start-complex-page";
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { isAuthenticated, loading } = useAuth();
@@ -65,6 +67,7 @@ function AppShell() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/start-complex" element={<StartComplexPage />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route
             path="/bookings"
@@ -72,6 +75,14 @@ function AppShell() {
               <ProtectedRoute>
                 <MyBookingsPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/organization"
+            element={
+              <AdminRoute>
+                <AdminOrganizationPage />
+              </AdminRoute>
             }
           />
           <Route

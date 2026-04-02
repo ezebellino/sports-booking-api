@@ -1246,3 +1246,64 @@ def test_admin_tenant_integrity_reports_ready_when_dataset_is_consistent(client,
     assert payload["issues"]["booking_timeslot_mismatches"] == 0
     assert payload["ready_for_not_null"] is True
 
+
+def test_public_onboarding_creates_organization_and_admin_user(client, db_session):
+    response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo SaaS Norte",
+            "organization_slug": "complejo-saas-norte",
+            "admin_full_name": "Owner Admin",
+            "admin_email": "owner@saas.com",
+            "admin_password": "password123",
+            "whatsapp_number": "+54 9 11 7788 9900",
+            "whatsapp_opt_in": True,
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["organization"]["name"] == "Complejo SaaS Norte"
+    assert payload["organization"]["slug"] == "complejo-saas-norte"
+    assert payload["access_token"]
+    assert payload["refresh_token"]
+
+    organization = db_session.query(Organization).filter(Organization.slug == "complejo-saas-norte").first()
+    admin_user = db_session.query(User).filter(User.email == "owner@saas.com").first()
+
+    assert organization is not None
+    assert admin_user is not None
+    assert admin_user.role == "admin"
+    assert admin_user.organization_id == organization.id
+    assert admin_user.whatsapp_opt_in is True
+
+
+def test_admin_can_view_and_update_current_organization(client, db_session):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Centro",
+            "admin_full_name": "Centro Admin",
+            "admin_email": "centro@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    current_response = client.get("/organizations/current", headers=auth_headers(admin_token))
+    assert current_response.status_code == 200
+    assert current_response.json()["name"] == "Complejo Centro"
+
+    update_response = client.patch(
+        "/organizations/current",
+        json={
+          "name": "Complejo Centro Renovado",
+          "slug": "centro-renovado",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "Complejo Centro Renovado"
+    assert update_response.json()["slug"] == "centro-renovado"
+

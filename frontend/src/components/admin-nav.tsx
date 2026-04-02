@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { useAuth } from "../modules/auth/auth-context";
 
 const adminLinks = [
+  { to: "/admin/organization", label: "Complejo" },
   { to: "/admin/metrics", label: "Métricas" },
   { to: "/admin/inventory", label: "Sedes y canchas" },
   { to: "/admin/timeslots", label: "Turnos" },
