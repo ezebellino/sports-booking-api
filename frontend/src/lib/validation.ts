@@ -1,5 +1,9 @@
-export function normalizeEmail(value: string) {
+﻿export function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
+}
+
+export function normalizePhone(value: string) {
+  return value.replace(/[^\d+]/g, "").trim();
 }
 
 export function validateEmail(value: string) {
@@ -40,6 +44,20 @@ export function validateFullName(value: string) {
 
   if (fullName.length < 3) {
     return "El nombre debe tener al menos 3 caracteres.";
+  }
+
+  return undefined;
+}
+
+export function validateWhatsappNumber(value: string) {
+  const phone = normalizePhone(value);
+
+  if (!phone) {
+    return undefined;
+  }
+
+  if (!/^\+?\d{8,15}$/.test(phone)) {
+    return "Ingresá un WhatsApp válido con código de país.";
   }
 
   return undefined;

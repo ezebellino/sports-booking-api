@@ -7,6 +7,8 @@ export type User = {
   email: string;
   full_name: string | null;
   role: "admin" | "user";
+  whatsapp_number: string | null;
+  whatsapp_opt_in: boolean;
 };
 
 export type Sport = {
@@ -46,6 +48,15 @@ export type TimeSlot = {
   remaining_spots: number;
   availability_status: "available" | "few_left" | "full" | "inactive" | "expired" | "booking_closed";
   policy_summary: string | null;
+};
+
+export type NotificationStatus = {
+  provider: string;
+  enabled: boolean;
+  configured: boolean;
+  has_access_token: boolean;
+  has_phone_number_id: boolean;
+  recipient_override: string | null;
 };
 
 export type BookingPolicy = {
@@ -180,7 +191,7 @@ async function safeJson(response: Response) {
 }
 
 export const api = {
-  register: (input: { email: string; password: string; full_name: string }) =>
+  register: (input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) =>
     request<User>("/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -201,6 +212,14 @@ export const api = {
 
   me: () => request<User>("/auth/me", { auth: true }),
 
+  updateMe: (input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) =>
+    request<User>("/auth/me", {
+      method: "PATCH",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
   listSports: () => request<Sport[]>("/sports"),
 
   updateSport: (
@@ -218,6 +237,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
+
+  getNotificationStatus: () => request<NotificationStatus>("/admin/notification-status", { auth: true }),
 
   listVenues: (sportId?: string | null) =>
     request<Venue[]>("/venues?limit=100").then((venues) =>

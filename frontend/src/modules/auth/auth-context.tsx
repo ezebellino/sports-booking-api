@@ -1,4 +1,4 @@
-import {
+﻿import {
   createContext,
   startTransition,
   useContext,
@@ -15,7 +15,8 @@ type AuthContextValue = {
   isAdmin: boolean;
   loading: boolean;
   login: (input: { email: string; password: string }) => Promise<void>;
-  register: (input: { email: string; password: string; full_name: string }) => Promise<void>;
+  register: (input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
+  updateProfile: (input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
   logout: () => void;
 };
 
@@ -59,9 +60,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(currentUser);
   }
 
-  async function register(input: { email: string; password: string; full_name: string }) {
+  async function register(input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) {
     await api.register(input);
     await login({ email: input.email, password: input.password });
+  }
+
+  async function updateProfile(input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) {
+    const currentUser = await api.updateMe(input);
+    setUser(currentUser);
   }
 
   function logout() {
@@ -78,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         register,
+        updateProfile,
         logout,
       }}
     >

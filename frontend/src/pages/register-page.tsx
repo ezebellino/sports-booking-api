@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
 import {
   normalizeEmail,
+  normalizePhone,
   validateEmail,
   validateFullName,
   validatePassword,
+  validateWhatsappNumber,
 } from "../lib/validation";
 import { useAuth } from "../modules/auth/auth-context";
 
@@ -14,6 +16,7 @@ type RegisterErrors = {
   fullName?: string;
   email?: string;
   password?: string;
+  whatsappNumber?: string;
 };
 
 export function RegisterPage() {
@@ -22,6 +25,8 @@ export function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [whatsappOptIn, setWhatsappOptIn] = useState(false);
   const [errors, setErrors] = useState<RegisterErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,7 +36,7 @@ export function RegisterPage() {
       return "Estamos creando tu cuenta y preparando el ingreso automático.";
     }
 
-    return "Te recomendamos usar un email real y una contraseña de al menos 8 caracteres.";
+    return "Podés dejar tu WhatsApp ahora o cargarlo después. Solo usaremos ese canal para avisos de reserva y cancelación.";
   }, [loading]);
 
   if (isAuthenticated) {
@@ -48,10 +53,11 @@ export function RegisterPage() {
       fullName: validateFullName(fullName),
       email: validateEmail(email),
       password: validatePassword(password),
+      whatsappNumber: validateWhatsappNumber(whatsappNumber),
     };
 
     setErrors(nextErrors);
-    return !nextErrors.fullName && !nextErrors.email && !nextErrors.password;
+    return !nextErrors.fullName && !nextErrors.email && !nextErrors.password && !nextErrors.whatsappNumber;
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -69,6 +75,8 @@ export function RegisterPage() {
         full_name: fullName.trim(),
         email: normalizeEmail(email),
         password: password.trim(),
+        whatsapp_number: normalizePhone(whatsappNumber) || null,
+        whatsapp_opt_in: whatsappOptIn,
       });
       navigate("/explore");
     } catch (submitError) {
@@ -155,6 +163,33 @@ export function RegisterPage() {
             {errors.password ? <p className="mt-2 text-sm text-rose-700">{errors.password}</p> : null}
           </div>
 
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="register-whatsapp">
+              WhatsApp
+            </label>
+            <input
+              id="register-whatsapp"
+              className={`field ${errors.whatsappNumber ? "field-error" : ""}`}
+              type="tel"
+              placeholder="5491122334455"
+              value={whatsappNumber}
+              onChange={(event) => {
+                setWhatsappNumber(event.target.value);
+                clearFieldError("whatsappNumber");
+              }}
+            />
+            {errors.whatsappNumber ? <p className="mt-2 text-sm text-rose-700">{errors.whatsappNumber}</p> : null}
+          </div>
+
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={whatsappOptIn}
+              onChange={(event) => setWhatsappOptIn(event.target.checked)}
+            />
+            Quiero recibir confirmaciones y cancelaciones por WhatsApp.
+          </label>
+
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
             {helperText}
           </div>
@@ -180,7 +215,7 @@ export function RegisterPage() {
           </button>
 
           <p className="text-center text-sm text-slate-500">
-            ¿Ya tenés usuario? {" "}
+            ¿Ya tenés usuario?{" "}
             <Link className="font-semibold text-slate-900" to="/login">
               Ingresar
             </Link>

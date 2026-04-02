@@ -811,3 +811,93 @@ def test_sport_specific_policy_marks_slot_as_booking_closed(client, db_session):
     payload = response.json()[0]
     assert payload["availability_status"] == "booking_closed"
     assert payload["policy_summary"] == "Esta configuración específica aplica al deporte Padel."
+
+def test_register_stores_whatsapp_preferences(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "whatsapp-user@example.com",
+            "password": "password123",
+            "full_name": "WhatsApp User",
+            "whatsapp_number": "+54 9 11 2233 4455",
+            "whatsapp_opt_in": True,
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["whatsapp_number"] == "5491122334455"
+    assert payload["whatsapp_opt_in"] is True
+
+
+def test_user_can_update_own_whatsapp_preferences(client):
+    access_token = register_and_login(client, "update-whatsapp@example.com", "password123", "Update WhatsApp")
+
+    response = client.patch(
+        "/auth/me",
+        json={
+            "whatsapp_number": "+54 9 11 9988 7766",
+            "whatsapp_opt_in": True,
+        },
+        headers=auth_headers(access_token),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["whatsapp_number"] == "5491199887766"
+    assert payload["whatsapp_opt_in"] is True
+
+
+def test_booking_and_cancel_trigger_whatsapp_notifications_when_user_opted_in(client, db_session, monkeypatch):
+    access_token = register_and_login(client, "notify-booking@example.com", "password123", "Notify Booking")
+    user = db_session.query(User).filter(User.email == "notify-booking@example.com").first()
+    user.whatsapp_number = "5491112345678"
+    user.whatsapp_opt_in = True
+    db_session.commit()
+
+    timeslot = seed_timeslot(db_session, capacity=2)
+
+    sent_events: list[str] = []
+
+    monkeypatch.setattr(
+        "app.api.routes.bookings.send_booking_confirmed_notification",
+        lambda booking: sent_events.append(f"confirmed:{booking.id}") or True,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.bookings.send_booking_cancelled_notification",
+        lambda booking: sent_events.append(f"cancelled:{booking.id}") or True,
+    )
+
+    create_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert create_response.status_code == 201
+    booking_id = create_response.json()["id"]
+    assert sent_events == [f"confirmed:{booking_id}"]
+
+    cancel_response = client.patch(
+        f"/bookings/{booking_id}/cancel",
+        headers=auth_headers(access_token),
+    )
+    assert cancel_response.status_code == 200
+    assert sent_events == [f"confirmed:{booking_id}", f"cancelled:{booking_id}"]
+
+
+def test_admin_can_check_notification_status(client, db_session):
+    register_and_login(client, "notification-admin@example.com", "password123", "Notification Admin")
+    admin_user = db_session.query(User).filter(User.email == "notification-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "notification-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    response = client.get("/admin/notification-status", headers=auth_headers(admin_token))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] in {"disabled", "meta_cloud"}
+    assert "configured" in payload

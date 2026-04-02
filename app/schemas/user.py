@@ -1,14 +1,40 @@
-from typing import Literal
-
-from pydantic import BaseModel, ConfigDict, EmailStr # type: ignore 
+﻿from typing import Literal
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator  # type: ignore
+
 UserRole = Literal["admin", "user"]
+
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
     full_name: str | None = None
+    whatsapp_number: str | None = None
+    whatsapp_opt_in: bool = False
+
+    @field_validator("whatsapp_number")
+    @classmethod
+    def normalize_whatsapp_number(cls, value: str | None):
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class UserUpdate(BaseModel):
+    full_name: str | None = None
+    whatsapp_number: str | None = None
+    whatsapp_opt_in: bool | None = None
+
+    @field_validator("whatsapp_number")
+    @classmethod
+    def normalize_whatsapp_number(cls, value: str | None):
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
 
 class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -17,5 +43,5 @@ class UserPublic(BaseModel):
     email: EmailStr
     full_name: str | None = None
     role: UserRole
-
-    
+    whatsapp_number: str | None = None
+    whatsapp_opt_in: bool

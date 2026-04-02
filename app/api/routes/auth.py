@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+﻿from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -9,13 +9,38 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
+from app.core.whatsapp import normalize_whatsapp_number
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import RefreshRequest, TokenPair
-from app.schemas.user import UserCreate, UserPublic
+from app.schemas.user import UserCreate, UserPublic, UserUpdate
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+
+def serialize_user(user: User) -> UserPublic:
+    return UserPublic(
+        id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        whatsapp_number=user.whatsapp_number,
+        whatsapp_opt_in=user.whatsapp_opt_in,
+    )
+
+
+def get_current_user_from_token(token: str, db: Session) -> User:
+    try:
+        payload = decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    user_id = payload.get("sub")
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return user
 
 
 @router.post("/register", response_model=UserPublic, status_code=201)
@@ -24,16 +49,21 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     if exists:
         raise HTTPException(status_code=409, detail="Email ya registrado")
 
+    whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
+    whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
+
     user = User(
         email=payload.email,
         full_name=payload.full_name,
         hashed_password=get_password_hash(payload.password),
         role="user",
+        whatsapp_number=whatsapp_number,
+        whatsapp_opt_in=whatsapp_opt_in,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return UserPublic(id=str(user.id), email=user.email, full_name=user.full_name, role=user.role)
+    return serialize_user(user)
 
 
 @router.post("/login", response_model=TokenPair)
@@ -69,30 +99,38 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserPublic)
 def me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    try:
-        payload = decode_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+    user = get_current_user_from_token(token, db)
+    return serialize_user(user)
 
-    user_id = payload.get("sub")
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return UserPublic(id=str(user.id), email=user.email, full_name=user.full_name, role=user.role)
+
+@router.patch("/me", response_model=UserPublic)
+def update_me(payload: UserUpdate, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    user = get_current_user_from_token(token, db)
+
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        return serialize_user(user)
+
+    if "full_name" in data:
+        user.full_name = data["full_name"]
+
+    if "whatsapp_number" in data:
+        user.whatsapp_number = normalize_whatsapp_number(data["whatsapp_number"])
+        if not user.whatsapp_number:
+            user.whatsapp_opt_in = False
+
+    if "whatsapp_opt_in" in data:
+        user.whatsapp_opt_in = bool(data["whatsapp_opt_in"] and user.whatsapp_number)
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return serialize_user(user)
 
 
 @router.patch("/change-password", status_code=204)
 def change_password(new_password: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    try:
-        payload = decode_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
-
-    user_id = payload.get("sub")
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
+    user = get_current_user_from_token(token, db)
     user.hashed_password = get_password_hash(new_password)
     db.add(user)
     db.commit()

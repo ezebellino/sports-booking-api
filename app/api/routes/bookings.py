@@ -14,12 +14,17 @@ from app.core.booking_policy import (
     resolve_policy_for_sport,
     resolve_policy_for_timeslot,
 )
+from app.core.notifications import (
+    send_booking_cancelled_notification,
+    send_booking_confirmed_notification,
+)
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
 from app.models.sport import Sport
 from app.models.timeslot import TimeSlot
+from app.models.user import User
 from app.schemas.booking import BookingCreate, BookingDetailPublic, BookingPolicyPublic, BookingPublic
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
@@ -49,16 +54,6 @@ def count_confirmed_bookings(db: Session, timeslot_id: UUID) -> int:
             )
         ).scalar_one()
     )
-
-
-def booking_cutoff_delta(timeslot: TimeSlot) -> timedelta:
-    policy = resolve_policy_for_timeslot(timeslot)
-    return timedelta(minutes=policy.min_booking_lead_minutes)
-
-
-def cancellation_cutoff_delta(timeslot: TimeSlot) -> timedelta:
-    policy = resolve_policy_for_timeslot(timeslot)
-    return timedelta(minutes=policy.cancellation_min_lead_minutes)
 
 
 def booking_policy_payload(sport: Sport | None = None) -> BookingPolicyPublic:
@@ -136,6 +131,7 @@ def serialize_booking_detail(booking: Booking, db: Session, now: datetime | None
                 "confirmed_bookings": confirmed_bookings,
                 "remaining_spots": remaining_spots,
                 "availability_status": availability_status,
+                "policy_summary": policy_source_message(policy),
                 "court": {
                     "id": booking.timeslot.court.id,
                     "venue_id": booking.timeslot.court.venue_id,
@@ -178,7 +174,10 @@ def get_booking_policies(
 def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     timeslot = db.execute(
         select(TimeSlot)
-        .options(joinedload(TimeSlot.court).joinedload(Court.sport))
+        .options(
+            joinedload(TimeSlot.court).joinedload(Court.sport),
+            joinedload(TimeSlot.court).joinedload(Court.venue),
+        )
         .where(TimeSlot.id == payload.timeslot_id)
     ).scalar_one_or_none()
 
@@ -209,8 +208,17 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
         existing_booking.status = "confirmed"
         existing_booking.updated_at = now
         db.commit()
-        db.refresh(existing_booking)
-        return existing_booking
+        booking = db.execute(
+            select(Booking)
+            .options(
+                joinedload(Booking.user),
+                joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.venue),
+                joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
+            )
+            .where(Booking.id == existing_booking.id)
+        ).scalar_one()
+        send_booking_confirmed_notification(booking)
+        return booking
 
     booking = Booking(
         user_id=user_id,
@@ -221,7 +229,16 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
     )
     db.add(booking)
     db.commit()
-    db.refresh(booking)
+    booking = db.execute(
+        select(Booking)
+        .options(
+            joinedload(Booking.user),
+            joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.venue),
+            joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
+        )
+        .where(Booking.id == booking.id)
+    ).scalar_one()
+    send_booking_confirmed_notification(booking)
     return booking
 
 
@@ -244,7 +261,11 @@ def list_bookings(db: Session = Depends(get_db), user_id: str = Depends(get_curr
 def cancel_booking(booking_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     booking = db.execute(
         select(Booking)
-        .options(joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport))
+        .options(
+            joinedload(Booking.user),
+            joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
+            joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.venue),
+        )
         .where(
             Booking.id == booking_id,
             Booking.user_id == user_id,
@@ -268,4 +289,5 @@ def cancel_booking(booking_id: str, db: Session = Depends(get_db), user_id: str 
     booking.updated_at = now
     db.commit()
     db.refresh(booking)
+    send_booking_cancelled_notification(booking)
     return booking

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import require_admin
+from app.core.whatsapp import notification_status_payload
 from app.db.session import get_db
 from app.models.court import Court
 from app.models.timeslot import TimeSlot
@@ -25,6 +26,11 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 @router.get("/me", response_model=UserPublic)
 def admin_me(current_admin: User = Depends(require_admin)):
     return current_admin
+
+
+@router.get("/notification-status")
+def get_notification_status(_: User = Depends(require_admin)):
+    return notification_status_payload()
 
 
 @router.post("/timeslots/bulk", response_model=TimeSlotBulkCreateResult, status_code=201)
