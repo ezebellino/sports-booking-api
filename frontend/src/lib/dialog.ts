@@ -32,3 +32,14 @@ export async function confirmDestructiveAction(input: {
 
   return result.isConfirmed;
 }
+
+export async function showTimedSuccess(input: { title: string; text: string; timer?: number }) {
+  await baseDialog.fire({
+    icon: "success",
+    title: input.title,
+    text: input.text,
+    timer: input.timer ?? 2500,
+    timerProgressBar: true,
+    showConfirmButton: false,
+  });
+}

@@ -21,6 +21,7 @@ import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api, type BookingPolicy, type TimeSlot } from "../lib/api";
+import { showTimedSuccess } from "../lib/dialog";
 import { currency, dateInputDefault, dateLabel, localDateBounds, timeZoneSummary } from "../lib/format";
 import { useAuth } from "../modules/auth/auth-context";
 
@@ -90,7 +91,12 @@ export function ExplorePage() {
   const bookingMutation = useMutation({
     mutationFn: api.createBooking,
     onSuccess: () => {
-      setFeedback("Reserva confirmada. Ya la podés ver en Mis reservas.");
+      setFeedback(null);
+      void showTimedSuccess({
+        title: "Reserva confirmada",
+        text: "Ya la podés ver en Mis reservas.",
+        timer: 2600,
+      });
       void queryClient.invalidateQueries({ queryKey: ["bookings"] });
       void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
@@ -459,8 +465,6 @@ function AvailabilityBadge({ slot }: { slot: TimeSlot }) {
 
 function availabilityLabel(slot: TimeSlot) {
   switch (slot.availability_status) {
-    case "few_left":
-      return "Pocos lugares";
     case "full":
       return "Completo";
     case "inactive":
@@ -476,8 +480,6 @@ function availabilityLabel(slot: TimeSlot) {
 
 function availabilityMessage(slot: TimeSlot, policy?: BookingPolicy) {
   switch (slot.availability_status) {
-    case "few_left":
-      return `Quedan ${slot.remaining_spots} lugar${slot.remaining_spots === 1 ? "" : "es"}.`;
     case "full":
       return "No quedan cupos para este horario.";
     case "inactive":
@@ -487,7 +489,7 @@ function availabilityMessage(slot: TimeSlot, policy?: BookingPolicy) {
     case "booking_closed":
       return policy?.booking_message ?? "La ventana para reservar este turno ya está cerrada.";
     default:
-      return `Hay ${slot.remaining_spots} lugares disponibles en este turno.`;
+      return "Turno disponible para reservar.";
   }
 }
 
