@@ -906,3 +906,60 @@ def test_admin_can_check_notification_status(client, db_session):
     assert any(check["key"] == "booking_confirmed_template" for check in payload["checks"])
     assert isinstance(payload["missing_items"], list)
 
+
+def test_admin_metrics_aggregates_operational_summary(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=3)
+
+    register_and_login(client, "metrics-admin@example.com", "password123", "Metrics Admin")
+    admin_user = db_session.query(User).filter(User.email == "metrics-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "metrics-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    first_user_token = register_and_login(client, "metrics-user-1@example.com", "password123", "Metrics User 1")
+    second_user_token = register_and_login(client, "metrics-user-2@example.com", "password123", "Metrics User 2")
+
+    first_booking = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(first_user_token),
+    )
+    assert first_booking.status_code == 201
+
+    second_booking = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(second_user_token),
+    )
+    assert second_booking.status_code == 201
+
+    cancel_second = client.patch(
+        f"/bookings/{second_booking.json()['id']}/cancel",
+        headers=auth_headers(second_user_token),
+    )
+    assert cancel_second.status_code == 200
+
+    response = client.get(
+        "/admin/metrics",
+        params={
+            "date_from": (timeslot.starts_at - timedelta(hours=1)).isoformat(),
+            "date_to": (timeslot.starts_at + timedelta(hours=1)).isoformat(),
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["summary"]["total_timeslots"] == 1
+    assert payload["summary"]["confirmed_bookings"] == 1
+    assert payload["summary"]["cancelled_bookings"] == 1
+    assert payload["summary"]["spots_total"] == 3
+    assert payload["summary"]["spots_filled"] == 1
+    assert payload["summary"]["estimated_revenue"] == 12000.0
+    assert payload["by_sport"][0]["name"] == "Padel"
+    assert payload["by_venue"][0]["name"] == "Complejo Norte"
+

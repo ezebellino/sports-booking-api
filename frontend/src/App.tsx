@@ -2,6 +2,7 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./modules/auth/auth-context";
 import { AdminInventoryPage } from "./pages/admin-inventory-page";
+import { AdminMetricsPage } from "./pages/admin-metrics-page";
 import { AdminTimeslotsPage } from "./pages/admin-timeslots-page";
 import { AdminWhatsappPage } from "./pages/admin-whatsapp-page";
 import { ExplorePage } from "./pages/explore-page";
@@ -74,6 +75,14 @@ function AppShell() {
             }
           />
           <Route
+            path="/admin/metrics"
+            element={
+              <AdminRoute>
+                <AdminMetricsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
             path="/admin/inventory"
             element={
               <AdminRoute>
@@ -106,7 +115,7 @@ function AppShell() {
           <MobileLink to="/" label="Inicio" icon={House} />
           <MobileLink to="/explore" label="Explorar" icon={Compass} />
           {isAdmin ? (
-            <MobileLink to="/admin/inventory" label="Admin" icon={Building2} />
+            <MobileLink to="/admin/metrics" label="Admin" icon={Building2} />
           ) : (
             <MobileLink to="/bookings" label="Reservas" icon={Ticket} />
           )}

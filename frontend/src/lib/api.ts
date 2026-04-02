@@ -50,6 +50,38 @@ export type TimeSlot = {
   policy_summary: string | null;
 };
 
+export type AdminMetricsBucket = {
+  name: string;
+  total_timeslots: number;
+  active_timeslots: number;
+  confirmed_bookings: number;
+  cancelled_bookings: number;
+  spots_total: number;
+  spots_filled: number;
+  occupancy_rate: number;
+  cancellation_rate: number;
+  estimated_revenue: number;
+};
+
+export type AdminMetrics = {
+  summary: {
+    date_from: string | null;
+    date_to: string | null;
+    total_timeslots: number;
+    active_timeslots: number;
+    upcoming_timeslots: number;
+    confirmed_bookings: number;
+    cancelled_bookings: number;
+    spots_total: number;
+    spots_filled: number;
+    occupancy_rate: number;
+    cancellation_rate: number;
+    estimated_revenue: number;
+  };
+  by_sport: AdminMetricsBucket[];
+  by_venue: AdminMetricsBucket[];
+};
+
 export type NotificationStatus = {
   provider: string;
   enabled: boolean;
@@ -252,6 +284,18 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
+
+  getAdminMetrics: (params: { dateFrom?: string; dateTo?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params.dateFrom) {
+      searchParams.set("date_from", params.dateFrom);
+    }
+    if (params.dateTo) {
+      searchParams.set("date_to", params.dateTo);
+    }
+    const suffix = searchParams.toString();
+    return request<AdminMetrics>(suffix ? `/admin/metrics?${suffix}` : "/admin/metrics", { auth: true });
+  },
 
   getNotificationStatus: () => request<NotificationStatus>("/admin/notification-status", { auth: true }),
 
