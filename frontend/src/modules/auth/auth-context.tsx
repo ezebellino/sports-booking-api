@@ -13,6 +13,8 @@ type AuthContextValue = {
   user: User | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isStaff: boolean;
+  canAccessAdmin: boolean;
   loading: boolean;
   login: (input: { email: string; password: string }) => Promise<void>;
   register: (input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
@@ -131,6 +133,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isAuthenticated: Boolean(user),
         isAdmin: user?.role === "admin",
+        isStaff: user?.role === "staff",
+        canAccessAdmin: user?.role === "admin" || user?.role === "staff",
         loading,
         login,
         register,

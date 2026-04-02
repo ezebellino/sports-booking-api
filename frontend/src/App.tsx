@@ -36,6 +36,30 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactElement }) {
+  const { isAuthenticated, canAccessAdmin, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-hero px-4">
+        <div className="shell-card w-full max-w-sm p-6 text-center text-sm text-slate-500">
+          Validando permisos...
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!canAccessAdmin) {
+    return <Navigate to="/explore" replace />;
+  }
+
+  return children;
+}
+
+function FullAdminRoute({ children }: { children: React.ReactElement }) {
   const { isAuthenticated, isAdmin, loading } = useAuth();
 
   if (loading) {
@@ -53,14 +77,14 @@ function AdminRoute({ children }: { children: React.ReactElement }) {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/explore" replace />;
+    return <Navigate to="/admin/metrics" replace />;
   }
 
   return children;
 }
 
 function AppShell() {
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, canAccessAdmin } = useAuth();
 
   return (
     <div className="min-h-screen bg-hero">
@@ -83,17 +107,17 @@ function AppShell() {
           <Route
             path="/admin/organization"
             element={
-              <AdminRoute>
+              <FullAdminRoute>
                 <AdminOrganizationPage />
-              </AdminRoute>
+              </FullAdminRoute>
             }
           />
           <Route
             path="/admin/staff"
             element={
-              <AdminRoute>
+              <FullAdminRoute>
                 <AdminStaffPage />
-              </AdminRoute>
+              </FullAdminRoute>
             }
           />
           <Route
@@ -123,9 +147,9 @@ function AppShell() {
           <Route
             path="/admin/whatsapp"
             element={
-              <AdminRoute>
+              <FullAdminRoute>
                 <AdminWhatsappPage />
-              </AdminRoute>
+              </FullAdminRoute>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -136,7 +160,7 @@ function AppShell() {
         <div className="mx-auto flex max-w-md items-center justify-between gap-2">
           <MobileLink to="/" label="Inicio" icon={House} />
           <MobileLink to="/explore" label="Explorar" icon={Compass} />
-          {isAdmin ? (
+          {canAccessAdmin ? (
             <MobileLink to="/admin/metrics" label="Admin" icon={Building2} />
           ) : (
             <MobileLink to="/bookings" label="Reservas" icon={Ticket} />

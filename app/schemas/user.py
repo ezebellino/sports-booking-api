@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator  # type: ignore
 
-UserRole = Literal["admin", "user"]
+UserRole = Literal["admin", "staff", "user"]
 
 
 class UserCreate(BaseModel):

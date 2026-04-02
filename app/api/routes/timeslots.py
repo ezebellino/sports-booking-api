@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps.auth import get_request_organization, require_admin
+from app.api.deps.auth import get_request_organization, require_staff_or_admin
 from app.core.booking_policy import policy_source_message, resolve_policy_for_timeslot
 from app.db.session import get_db
 from app.models.booking import Booking
@@ -76,7 +76,7 @@ def count_confirmed_bookings(db: Session, timeslot_id) -> int:
 def create_timeslot(
     payload: TimeSlotCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     court = db.execute(
         select(Court)
@@ -150,7 +150,7 @@ def update_timeslot(
     timeslot_id: str,
     payload: TimeSlotUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     timeslot = db.execute(
         select(TimeSlot)
@@ -182,7 +182,7 @@ def update_timeslot(
 def delete_timeslot(
     timeslot_id: str,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     timeslot = db.query(TimeSlot).filter(TimeSlot.id == timeslot_id, TimeSlot.organization_id == current_admin.organization_id).first()
     if not timeslot:

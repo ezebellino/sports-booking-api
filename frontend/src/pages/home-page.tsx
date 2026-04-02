@@ -8,10 +8,18 @@ import { api } from "../lib/api";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function HomePage() {
-  const { isAuthenticated, isAdmin, user } = useAuth();
+  const { canAccessAdmin, isAuthenticated, isAdmin, user } = useAuth();
   const sportsQuery = useQuery({ queryKey: ["sports"], queryFn: api.listSports });
   const venuesQuery = useQuery({ queryKey: ["venues"], queryFn: () => api.listVenues(null) });
-  const organizationLabel = user?.organization_name ?? "Complejo Demo";
+  const contextQuery = useQuery({
+    queryKey: ["request-organization-context"],
+    queryFn: api.getRequestOrganizationContext,
+  });
+  const organizationLabel =
+    user?.organization_name ??
+    contextQuery.data?.branding_name ??
+    contextQuery.data?.organization.name ??
+    "Complejo Demo";
 
   return (
     <>
@@ -27,9 +35,9 @@ export function HomePage() {
             Reservá una cancha en pocos toques, con un flujo claro de punta a punta.
           </h2>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-            La experiencia está pensada para celular: primero elegís deporte, después sede,
-            luego cancha y por último el turno disponible. Si sos administrador, además tenés
-            herramientas para generar y editar bloques completos de horarios.
+            {organizationLabel} ya tiene una experiencia pensada para celular: primero elegís deporte,
+            después sede, luego cancha y por último el turno disponible. Si tu rol es operativo,
+            además tenés herramientas para generar y editar bloques completos de horarios.
           </p>
           {isAuthenticated ? (
             <div className="mt-4 inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
@@ -50,7 +58,7 @@ export function HomePage() {
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <MetricCard label="Deportes" value={String(sportsQuery.data?.length ?? 0)} icon={<ShieldCheck size={18} />} />
             <MetricCard label="Sedes" value={String(venuesQuery.data?.length ?? 0)} icon={<Map size={18} />} />
-            <MetricCard label="Perfil" value={isAdmin ? "Admin" : "Usuario"} icon={<CalendarRange size={18} />} />
+            <MetricCard label="Perfil" value={isAdmin ? "Admin" : canAccessAdmin ? "Staff" : "Usuario"} icon={<CalendarRange size={18} />} />
           </div>
         </div>
 
@@ -78,7 +86,7 @@ export function HomePage() {
               <li>Explorar por sede, cancha y fecha con un flujo simple.</li>
               <li>Reservar turnos y revisar tu agenda personal con la hora local de cada sede.</li>
               {isAuthenticated ? <li>Operar dentro del complejo activo sin mezclar datos de otras sedes o clientes.</li> : null}
-              <li>{isAdmin ? "Administrar turnos masivos, edición y control por cancha." : "Ver el panel admin cuando tu rol tenga permisos."}</li>
+              <li>{canAccessAdmin ? "Administrar turnos masivos, inventario y control operativo por cancha." : "Ver el panel admin cuando tu rol tenga permisos."}</li>
             </ul>
           </div>
         </div>
@@ -89,7 +97,7 @@ export function HomePage() {
           <SectionTitle
             eyebrow="Plataforma"
             title="Una base lista para reservas reales y operación diaria"
-            description="El frontend ya conversa con tus recursos actuales de deportes, sedes, canchas, turnos, autenticación y reservas. Sobre esa base estamos sumando experiencia admin, validaciones y automatizaciones para el día a día del complejo."
+            description={`El frontend ya conversa con los recursos actuales de ${organizationLabel}: deportes, sedes, canchas, turnos, autenticación y reservas. Sobre esa base seguimos sumando experiencia operativa, validaciones y automatizaciones para el día a día del complejo.`}
           />
         </div>
         <div className="shell-card p-6">

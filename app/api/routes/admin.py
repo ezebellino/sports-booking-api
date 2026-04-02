@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps.auth import require_admin
+from app.api.deps.auth import require_admin, require_staff_or_admin
+from app.core.holidays import HolidayProviderError, fetch_public_holidays, filter_holidays_by_month
 from app.core.organization_settings import get_or_create_organization_settings
 from app.core.whatsapp import notification_status_payload
 from app.models.organization import Organization
@@ -19,6 +20,8 @@ from app.schemas.admin import (
     AdminMetricsBucket,
     AdminMetricsPublic,
     AdminMetricsSummary,
+    HolidayCalendarPublic,
+    HolidayPublic,
     TenantIntegrityCounts,
     TenantIntegrityIssues,
     TenantIntegrityPublic,
@@ -51,11 +54,43 @@ def admin_me(current_admin: User = Depends(require_admin)):
 @router.get("/notification-status")
 def get_notification_status(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     organization = current_admin.organization
     settings = get_or_create_organization_settings(db, organization) if organization else None
     return notification_status_payload(settings)
+
+
+@router.get("/holidays", response_model=HolidayCalendarPublic)
+def get_holidays_calendar(
+    year: int = Query(..., ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    country_code: str = Query(default="AR", min_length=2, max_length=2),
+    _: User = Depends(require_staff_or_admin),
+):
+    try:
+        holidays = filter_holidays_by_month(fetch_public_holidays(year, country_code), month)
+    except HolidayProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return HolidayCalendarPublic(
+        country_code=country_code.strip().upper(),
+        year=year,
+        month=month,
+        holidays=[
+            HolidayPublic(
+                date=holiday.date,
+                local_name=holiday.local_name,
+                name=holiday.name,
+                country_code=holiday.country_code,
+                global_holiday=holiday.global_holiday,
+                counties=holiday.counties,
+                launch_year=holiday.launch_year,
+                types=holiday.types,
+            )
+            for holiday in holidays
+        ],
+    )
 
 
 @router.get("/tenant-integrity", response_model=TenantIntegrityPublic)
@@ -172,7 +207,7 @@ def get_admin_metrics(
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     stmt = select(TimeSlot).options(
         joinedload(TimeSlot.court).joinedload(Court.sport),
@@ -258,7 +293,7 @@ def get_admin_metrics(
 def bulk_create_timeslots(
     payload: TimeSlotBulkCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     courts = (
         db.query(Court)

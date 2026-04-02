@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
+import { api } from "../lib/api";
 import { normalizeEmail, validateEmail, validatePassword } from "../lib/validation";
 import { useAuth } from "../modules/auth/auth-context";
 
@@ -13,19 +15,25 @@ type LoginErrors = {
 export function LoginPage() {
   const navigate = useNavigate();
   const { isAuthenticated, login } = useAuth();
+  const contextQuery = useQuery({
+    queryKey: ["request-organization-context"],
+    queryFn: api.getRequestOrganizationContext,
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<LoginErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const brandLabel = contextQuery.data?.branding_name ?? contextQuery.data?.organization.name ?? "el complejo";
+
   const helperText = useMemo(() => {
     if (loading) {
       return "Estamos validando tus credenciales y preparando tu sesión.";
     }
 
-    return "Usá el mismo email y contraseña que registraste en la aplicación.";
-  }, [loading]);
+    return `Usá el mismo email y contraseña que registraste en ${brandLabel}.`;
+  }, [brandLabel, loading]);
 
   if (isAuthenticated) {
     return <Navigate to="/explore" replace />;
@@ -60,9 +68,7 @@ export function LoginPage() {
       await login({ email: normalizeEmail(email), password: password.trim() });
       navigate("/explore");
     } catch (submitError) {
-      setSubmitError(
-        submitError instanceof Error ? submitError.message : "No pudimos iniciar sesión.",
-      );
+      setSubmitError(submitError instanceof Error ? submitError.message : "No pudimos iniciar sesión.");
     } finally {
       setLoading(false);
     }
@@ -74,12 +80,10 @@ export function LoginPage() {
       <section className="mx-auto grid w-full max-w-5xl gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="shell-card p-6 sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-skyline">Acceso</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
-            Entrá a tu cuenta
-          </h2>
+          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">Entrá a tu cuenta</h2>
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            Tu backend ya usa JWT con refresh. En el frontend dejamos sesión persistida para que la
-            app se sienta continua, sobre todo en mobile.
+            Ingresá para operar dentro de {brandLabel}. La sesión queda persistida para que la app se sienta continua,
+            sobre todo en mobile.
           </p>
         </div>
 
@@ -149,7 +153,7 @@ export function LoginPage() {
           </button>
 
           <p className="text-center text-sm text-slate-500">
-            ¿No tenés cuenta? {" "}
+            ¿No tenés cuenta?{" "}
             <Link className="font-semibold text-slate-900" to="/register">
               Crear cuenta
             </Link>

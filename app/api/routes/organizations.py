@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps.auth import require_admin
+from app.api.deps.auth import get_request_organization, require_admin
 from app.api.routes.auth import ensure_user_organization
 from app.core.organization_settings import get_or_create_organization_settings
 from app.core.security import create_access_token, create_refresh_token, get_password_hash
@@ -19,6 +19,7 @@ from app.schemas.organization import (
     OrganizationOnboardingCreate,
     OrganizationOnboardingPublic,
     OrganizationPublic,
+    OrganizationRequestContextPublic,
     OrganizationSettingsPublic,
     OrganizationSettingsUpdate,
     OrganizationUpdate,
@@ -86,6 +87,20 @@ def serialize_settings(settings) -> OrganizationSettingsPublic:
         whatsapp_template_booking_cancelled=settings.whatsapp_template_booking_cancelled,
         whatsapp_recipient_override=settings.whatsapp_recipient_override,
         has_whatsapp_access_token=bool(settings.whatsapp_access_token),
+    )
+
+
+@router.get("/request-context", response_model=OrganizationRequestContextPublic)
+def get_request_context(
+    organization: Organization = Depends(get_request_organization),
+    db: Session = Depends(get_db),
+):
+    settings = get_or_create_organization_settings(db, organization)
+    return OrganizationRequestContextPublic(
+        organization=organization,
+        branding_name=settings.branding_name,
+        logo_url=settings.logo_url,
+        primary_color=settings.primary_color,
     )
 
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import get_request_organization, require_admin
+from app.api.deps.auth import get_request_organization, require_staff_or_admin
 from app.db.session import get_db
 from app.models.organization import Organization
 from app.models.sport import Sport
@@ -20,7 +20,7 @@ VENUE_DELETE_BLOCKED_DETAIL = "No se puede eliminar una sede con canchas asociad
 def create_venue(
     payload: VenueCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     if payload.allowed_sport_id and not db.get(Sport, payload.allowed_sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
@@ -57,7 +57,7 @@ def update_venue(
     venue_id: str,
     payload: VenueUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     venue = db.query(Venue).filter(Venue.id == venue_id, Venue.organization_id == current_admin.organization_id).first()
     if not venue:
@@ -84,7 +84,7 @@ def update_venue(
 def delete_venue(
     venue_id: str,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     venue = db.query(Venue).filter(Venue.id == venue_id, Venue.organization_id == current_admin.organization_id).first()
     if not venue:

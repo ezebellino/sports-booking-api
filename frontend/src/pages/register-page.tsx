@@ -1,7 +1,9 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
+import { api } from "../lib/api";
 import {
   normalizeEmail,
   normalizePhone,
@@ -22,6 +24,10 @@ type RegisterErrors = {
 export function RegisterPage() {
   const navigate = useNavigate();
   const { isAuthenticated, register } = useAuth();
+  const contextQuery = useQuery({
+    queryKey: ["request-organization-context"],
+    queryFn: api.getRequestOrganizationContext,
+  });
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,13 +37,15 @@ export function RegisterPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const brandLabel = contextQuery.data?.branding_name ?? contextQuery.data?.organization.name ?? "el complejo";
+
   const helperText = useMemo(() => {
     if (loading) {
       return "Estamos creando tu cuenta y preparando el ingreso automático.";
     }
 
-    return "Podés dejar tu WhatsApp ahora o cargarlo después. Solo usaremos ese canal para avisos de reserva y cancelación.";
-  }, [loading]);
+    return `Podés dejar tu WhatsApp ahora o cargarlo después. Solo lo usaremos para avisos de reserva y cancelación de ${brandLabel}.`;
+  }, [brandLabel, loading]);
 
   if (isAuthenticated) {
     return <Navigate to="/explore" replace />;
@@ -80,9 +88,7 @@ export function RegisterPage() {
       });
       navigate("/explore");
     } catch (submitError) {
-      setSubmitError(
-        submitError instanceof Error ? submitError.message : "No pudimos crear la cuenta.",
-      );
+      setSubmitError(submitError instanceof Error ? submitError.message : "No pudimos crear la cuenta.");
     } finally {
       setLoading(false);
     }
@@ -94,12 +100,10 @@ export function RegisterPage() {
       <section className="mx-auto grid w-full max-w-5xl gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="shell-card p-6 sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-skyline">Registro</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
-            Creá tu acceso
-          </h2>
+          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">Creá tu acceso</h2>
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            El alta entra por `/auth/register` y luego inicia sesión automáticamente para que el
-            usuario llegue directo a explorar turnos.
+            Registrate para reservar dentro de {brandLabel}. Después del alta vas a entrar automáticamente para llegar
+            directo a explorar turnos.
           </p>
         </div>
 
@@ -182,11 +186,7 @@ export function RegisterPage() {
           </div>
 
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={whatsappOptIn}
-              onChange={(event) => setWhatsappOptIn(event.target.checked)}
-            />
+            <input type="checkbox" checked={whatsappOptIn} onChange={(event) => setWhatsappOptIn(event.target.checked)} />
             Quiero recibir confirmaciones y cancelaciones por WhatsApp.
           </label>
 

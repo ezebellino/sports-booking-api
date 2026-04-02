@@ -1,12 +1,21 @@
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { CalendarCheck2, MapPinned, Shield, Ticket } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
+import { api } from "../lib/api";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function AppHeader() {
-  const { isAdmin, isAuthenticated, logout, user } = useAuth();
-  const roleLabel = user?.role === "admin" ? "Administrador" : "Usuario";
-  const organizationLabel = user?.organization_name ?? "Complejo Demo";
+  const { canAccessAdmin, isAdmin, isAuthenticated, logout, user } = useAuth();
+  const contextQuery = useQuery({
+    queryKey: ["request-organization-context"],
+    queryFn: api.getRequestOrganizationContext,
+  });
+  const roleLabel =
+    user?.role === "admin" ? "Administrador" : user?.role === "staff" ? "Staff" : "Usuario";
+  const publicBrandLabel =
+    contextQuery.data?.branding_name || contextQuery.data?.organization.name || "Complejo Demo";
+  const organizationLabel = user?.organization_name ?? publicBrandLabel;
 
   return (
     <header className="mb-6 flex flex-col gap-4 pt-2">
@@ -29,7 +38,7 @@ export function AppHeader() {
           <DesktopNavLink to="/bookings" icon={<CalendarCheck2 size={16} />}>
             Mis reservas
           </DesktopNavLink>
-          {isAdmin ? (
+          {canAccessAdmin ? (
             <DesktopNavLink to="/admin/inventory" icon={<Shield size={16} />}>
               Admin
             </DesktopNavLink>
@@ -67,7 +76,9 @@ export function AppHeader() {
             <p className="mt-1 text-xs text-slate-500">
               {user.role === "admin"
                 ? "Puede gestionar usuarios, sedes, canchas, turnos y próximas herramientas administrativas."
-                : "Puede registrarse, explorar turnos y administrar sus propias reservas."}
+                : user?.role === "staff"
+                  ? "Puede operar sedes, canchas, turnos y métricas del complejo."
+                  : "Puede registrarse, explorar turnos y administrar sus propias reservas."}
             </p>
           </div>
           <button className="btn-secondary md:hidden" onClick={logout} type="button">

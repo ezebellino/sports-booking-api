@@ -1,5 +1,6 @@
 ﻿from datetime import datetime, timedelta, timezone
 
+from app.core.holidays import HolidayProviderError, HolidayRecord
 from app.core.security import get_password_hash
 from app.models.booking import Booking
 from app.models.court import Court
@@ -350,6 +351,77 @@ def test_non_admin_cannot_manage_venues_or_courts(client, db_session):
     assert court_response.status_code == 403
 
 
+def test_staff_can_manage_operational_resources_but_not_org_settings(client, db_session):
+    sport = Sport(name="Vóley", description="Operación staff")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Staff Ops",
+            "admin_full_name": "Owner Ops",
+            "admin_email": "owner-ops@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    invite_response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+            "email": "staff-ops@saas.com",
+            "full_name": "Staff Ops",
+            "role": "staff",
+            "expires_in_days": 7,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert invite_response.status_code == 201
+
+    accept_response = client.post(
+        "/organizations/staff-invitations/accept",
+        json={
+            "token": invite_response.json()["invite_token"],
+            "full_name": "Staff Ops",
+            "password": "password123",
+        },
+    )
+    assert accept_response.status_code == 200
+    staff_token = accept_response.json()["access_token"]
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Staff",
+            "address": "Operativa 123",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(staff_token),
+    )
+    assert venue_response.status_code == 201
+
+    metrics_response = client.get("/admin/metrics", headers=auth_headers(staff_token))
+    assert metrics_response.status_code == 200
+
+    forbidden_org_response = client.patch(
+        "/organizations/current",
+        json={"name": "No debería poder"},
+        headers=auth_headers(staff_token),
+    )
+    assert forbidden_org_response.status_code == 403
+
+    forbidden_whatsapp_response = client.patch(
+        "/organizations/current/settings",
+        json={"whatsapp_provider": "meta_cloud"},
+        headers=auth_headers(staff_token),
+    )
+    assert forbidden_whatsapp_response.status_code == 403
+
+
 def test_admin_can_create_update_and_delete_venue_and_court(client, db_session):
     sport = Sport(name="Fútbol 5", description="Turnos nocturnos")
     db_session.add(sport)
@@ -435,7 +507,7 @@ def test_admin_delete_blocks_for_related_courts_and_timeslots(client, db_session
         headers=auth_headers(admin_token),
     )
     assert delete_court_response.status_code == 409
-    assert delete_court_response.json()["detail"] == "No se puede eliminar una cancha con turnos asociados"
+    assert delete_court_response.json()["detail"] == "No se puede eliminar una cancha con turnos futuros asociados"
 
     delete_venue_response = client.delete(
         f"/venues/{timeslot.court.venue_id}",
@@ -443,6 +515,64 @@ def test_admin_delete_blocks_for_related_courts_and_timeslots(client, db_session
     )
     assert delete_venue_response.status_code == 409
     assert delete_venue_response.json()["detail"] == "No se puede eliminar una sede con canchas asociadas"
+
+
+def test_admin_can_delete_court_with_only_expired_timeslots_and_no_bookings(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=2)
+    expired_start = datetime.now(timezone.utc) - timedelta(days=2)
+    timeslot.starts_at = expired_start
+    timeslot.ends_at = expired_start + timedelta(hours=1)
+    db_session.commit()
+
+    register_and_login(client, "inventory-admin-expired@example.com", "password123", "Inventory Admin Expired")
+    admin_user = db_session.query(User).filter(User.email == "inventory-admin-expired@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "inventory-admin-expired@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    delete_court_response = client.delete(
+        f"/courts/{timeslot.court_id}",
+        headers=auth_headers(admin_token),
+    )
+    assert delete_court_response.status_code == 204
+    assert db_session.get(Court, timeslot.court_id) is None
+
+
+def test_admin_delete_blocks_court_with_bookings_even_if_timeslot_is_expired(client, db_session):
+    timeslot = seed_timeslot(db_session, capacity=2)
+    access_token = register_and_login(client, "inventory-booking@example.com", "password123", "Inventory Booking")
+
+    create_response = client.post(
+        "/bookings",
+        json={"timeslot_id": str(timeslot.id)},
+        headers=auth_headers(access_token),
+    )
+    assert create_response.status_code == 201
+
+    timeslot.starts_at = datetime.now(timezone.utc) - timedelta(days=1, hours=2)
+    timeslot.ends_at = datetime.now(timezone.utc) - timedelta(days=1)
+    db_session.commit()
+
+    register_and_login(client, "inventory-admin-booking@example.com", "password123", "Inventory Admin Booking")
+    admin_user = db_session.query(User).filter(User.email == "inventory-admin-booking@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "inventory-admin-booking@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    delete_court_response = client.delete(
+        f"/courts/{timeslot.court_id}",
+        headers=auth_headers(admin_token),
+    )
+    assert delete_court_response.status_code == 409
+    assert delete_court_response.json()["detail"] == "No se puede eliminar una cancha con reservas asociadas"
 
 
 def test_booking_can_be_cancelled_and_list_reflects_status(client, db_session):
@@ -1310,6 +1440,40 @@ def test_admin_can_view_and_update_current_organization(client, db_session):
     assert update_response.json()["slug"] == "centro-renovado"
 
 
+def test_public_request_context_exposes_branding_for_current_complex(client):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Branding Público",
+            "organization_slug": "branding-publico",
+            "admin_full_name": "Brand Admin",
+            "admin_email": "brand-public@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    settings_response = client.patch(
+        "/organizations/current/settings",
+        json={
+            "branding_name": "Branding Público",
+            "logo_url": "https://example.com/logo.png",
+            "primary_color": "#112233",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert settings_response.status_code == 200
+
+    context_response = client.get("/organizations/request-context", headers=auth_headers(admin_token))
+    assert context_response.status_code == 200
+    payload = context_response.json()
+    assert payload["organization"]["slug"] == "branding-publico"
+    assert payload["branding_name"] == "Branding Público"
+    assert payload["logo_url"] == "https://example.com/logo.png"
+    assert payload["primary_color"] == "#112233"
+
+
 def test_onboarding_creates_organization_settings_row(client, db_session):
     response = client.post(
         "/organizations/onboard",
@@ -1503,4 +1667,72 @@ def test_admin_notification_status_uses_tenant_level_whatsapp_settings(client):
     assert payload["booking_confirmed_template"] == "tenant_booking_ok"
     assert payload["booking_cancelled_template"] == "tenant_booking_cancel"
     assert payload["recipient_override"] == "5491166778899"
+
+
+def test_admin_holidays_returns_monthly_calendar(client, db_session, monkeypatch):
+    register_and_login(client, "holiday-admin@example.com", "password123", "Holiday Admin")
+    admin_user = db_session.query(User).filter(User.email == "holiday-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "holiday-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    monkeypatch.setattr(
+        "app.api.routes.admin.fetch_public_holidays",
+        lambda year, country_code: [
+            HolidayRecord(
+                date="2026-04-02",
+                local_name="Día del Veterano",
+                name="Malvinas Day",
+                country_code=country_code,
+                global_holiday=True,
+                counties=None,
+                launch_year=None,
+                types=["Public"],
+            ),
+            HolidayRecord(
+                date="2026-05-01",
+                local_name="Día del Trabajador",
+                name="Labour Day",
+                country_code=country_code,
+                global_holiday=True,
+                counties=None,
+                launch_year=None,
+                types=["Public"],
+            ),
+        ],
+    )
+
+    response = client.get("/admin/holidays?year=2026&month=4&country_code=AR", headers=auth_headers(admin_token))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["country_code"] == "AR"
+    assert payload["year"] == 2026
+    assert payload["month"] == 4
+    assert len(payload["holidays"]) == 1
+    assert payload["holidays"][0]["date"] == "2026-04-02"
+
+
+def test_admin_holidays_surfaces_provider_failures(client, db_session, monkeypatch):
+    register_and_login(client, "holiday-fail-admin@example.com", "password123", "Holiday Fail Admin")
+    admin_user = db_session.query(User).filter(User.email == "holiday-fail-admin@example.com").first()
+    admin_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "holiday-fail-admin@example.com", "password": "password123"},
+    ).json()["access_token"]
+
+    monkeypatch.setattr(
+        "app.api.routes.admin.fetch_public_holidays",
+        lambda year, country_code: (_ for _ in ()).throw(HolidayProviderError("Proveedor caído")),
+    )
+
+    response = client.get("/admin/holidays?year=2026&country_code=AR", headers=auth_headers(admin_token))
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Proveedor caído"
 

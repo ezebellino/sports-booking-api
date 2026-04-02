@@ -12,13 +12,16 @@ const adminLinks = [
 ];
 
 export function AdminNav() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const organizationLabel = user?.organization_name ?? "Complejo Demo";
+  const visibleLinks = adminLinks.filter((link) =>
+    isAdmin ? true : !["/admin/organization", "/admin/staff", "/admin/whatsapp"].includes(link.to),
+  );
 
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <nav className="flex flex-wrap gap-2">
-        {adminLinks.map((link) => (
+        {visibleLinks.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}

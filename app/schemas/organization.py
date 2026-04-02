@@ -87,6 +87,13 @@ class OrganizationSettingsPublic(BaseModel):
     has_whatsapp_access_token: bool = False
 
 
+class OrganizationRequestContextPublic(BaseModel):
+    organization: OrganizationPublic
+    branding_name: str | None = None
+    logo_url: str | None = None
+    primary_color: str | None = None
+
+
 class OrganizationSettingsUpdate(BaseModel):
     branding_name: str | None = None
     logo_url: str | None = None
@@ -148,8 +155,8 @@ class StaffInvitationCreate(BaseModel):
     @classmethod
     def validate_role(cls, value: str):
         normalized = value.strip().lower()
-        if normalized not in {"admin", "user"}:
-            raise ValueError("El rol debe ser admin o user")
+        if normalized not in {"admin", "staff", "user"}:
+            raise ValueError("El rol debe ser admin, staff o user")
         return normalized
 
     @field_validator("expires_in_days")

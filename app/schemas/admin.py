@@ -55,3 +55,21 @@ class TenantIntegrityPublic(BaseModel):
     counts: TenantIntegrityCounts
     issues: TenantIntegrityIssues
     ready_for_not_null: bool
+
+
+class HolidayPublic(BaseModel):
+    date: str
+    local_name: str
+    name: str
+    country_code: str
+    global_holiday: bool
+    counties: list[str] | None = None
+    launch_year: int | None = None
+    types: list[str] = []
+
+
+class HolidayCalendarPublic(BaseModel):
+    country_code: str
+    year: int
+    month: int | None = None
+    holidays: list[HolidayPublic]

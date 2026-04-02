@@ -11,7 +11,7 @@ export function AdminStaffPage() {
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState<"admin" | "user">("user");
+  const [role, setRole] = useState<"admin" | "staff" | "user">("staff");
   const [expiresInDays, setExpiresInDays] = useState("7");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +26,7 @@ export function AdminStaffPage() {
     onSuccess: () => {
       setEmail("");
       setFullName("");
-      setRole("user");
+      setRole("staff");
       setExpiresInDays("7");
       setError(null);
       setFeedback("Invitación creada correctamente.");
@@ -106,7 +106,8 @@ export function AdminStaffPage() {
               placeholder="Nombre opcional"
             />
             <div className="grid gap-4 sm:grid-cols-2">
-              <select className="field" value={role} onChange={(event) => setRole(event.target.value as "admin" | "user")}>
+              <select className="field" value={role} onChange={(event) => setRole(event.target.value as "admin" | "staff" | "user")}>
+                <option value="staff">Staff</option>
                 <option value="user">Usuario</option>
                 <option value="admin">Admin</option>
               </select>
@@ -165,7 +166,7 @@ export function AdminStaffPage() {
                         <p className="mt-1 text-sm text-slate-500">{invitation.email}</p>
                         <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
                           <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-                            {invitation.role === "admin" ? "Admin" : "Usuario"}
+                            {invitation.role === "admin" ? "Admin" : invitation.role === "staff" ? "Staff" : "Usuario"}
                           </span>
                           <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{invitation.status}</span>
                         </div>

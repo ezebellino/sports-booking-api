@@ -11,6 +11,7 @@ from app.models.user import User
 AUTH_ERROR_DETAIL = "Token inválido o expirado"
 USER_NOT_FOUND_DETAIL = "Usuario no encontrado"
 ADMIN_ONLY_DETAIL = "Acceso exclusivo para administradores"
+STAFF_ONLY_DETAIL = "Acceso exclusivo para staff operativo o administradores"
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
@@ -65,4 +66,10 @@ def get_request_organization(
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail=ADMIN_ONLY_DETAIL)
+    return current_user
+
+
+def require_staff_or_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in {"admin", "staff"}:
+        raise HTTPException(status_code=403, detail=STAFF_ONLY_DETAIL)
     return current_user

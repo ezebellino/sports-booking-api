@@ -34,6 +34,57 @@ function combineDateTime(date: string, time: string) {
   return new Date(`${date}T${time}`).toISOString();
 }
 
+const weekdayOptions = [
+  { value: 0, label: "Lun" },
+  { value: 1, label: "Mar" },
+  { value: 2, label: "Mié" },
+  { value: 3, label: "Jue" },
+  { value: 4, label: "Vie" },
+  { value: 5, label: "Sáb" },
+  { value: 6, label: "Dom" },
+];
+
+function monthInputDefaultFromDate(dateValue: string) {
+  return dateValue.slice(0, 7);
+}
+
+function getMonthDateBounds(monthValue: string) {
+  const [year, month] = monthValue.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+  return {
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  };
+}
+
+function buildMonthlyScheduleDates(
+  monthValue: string,
+  weekdays: number[],
+  excludedDates: string[],
+) {
+  const [year, month] = monthValue.split("-").map(Number);
+  if (!year || !month) {
+    return [] as string[];
+  }
+
+  const excludedSet = new Set(excludedDates);
+  const selectedWeekdays = new Set(weekdays);
+  const dates: string[] = [];
+  const current = new Date(year, month - 1, 1);
+
+  while (current.getMonth() === month - 1) {
+    const weekday = (current.getDay() + 6) % 7;
+    const dateText = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+    if (selectedWeekdays.has(weekday) && !excludedSet.has(dateText)) {
+      dates.push(dateText);
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}
+
 type PreviewCourtStatus = {
   courtId: string;
   courtName: string;
@@ -51,6 +102,11 @@ type PreviewRow = {
 export function AdminTimeslotsPage() {
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState(dateInputDefault);
+  const [scheduleMode, setScheduleMode] = useState<"daily" | "monthly">("daily");
+  const [scheduleMonth, setScheduleMonth] = useState(() => monthInputDefaultFromDate(dateInputDefault()));
+  const [monthlyWeekdays, setMonthlyWeekdays] = useState<number[]>([0, 1, 2, 3, 4]);
+  const [holidayCountryCode, setHolidayCountryCode] = useState("AR");
+  const [excludedHolidayDates, setExcludedHolidayDates] = useState<string[]>([]);
   const [filterSportId, setFilterSportId] = useState<string>("");
   const [filterVenueId, setFilterVenueId] = useState<string>("");
   const [filterCourtId, setFilterCourtId] = useState<string>("");
@@ -72,6 +128,7 @@ export function AdminTimeslotsPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
   const dayBounds = useMemo(() => localDateBounds(selectedDate), [selectedDate]);
+  const monthBounds = useMemo(() => getMonthDateBounds(scheduleMonth), [scheduleMonth]);
 
   const sportsQuery = useQuery({
     queryKey: ["sports"],
@@ -81,6 +138,15 @@ export function AdminTimeslotsPage() {
   const activePolicyQuery = useQuery({
     queryKey: ["booking-policies", filterSportId || "general"],
     queryFn: () => api.listBookingPolicies(filterSportId || null),
+  });
+
+  const holidaysQuery = useQuery({
+    queryKey: ["admin-holidays", scheduleMonth, holidayCountryCode],
+    queryFn: () => {
+      const [year, month] = scheduleMonth.split("-").map(Number);
+      return api.getAdminHolidays({ year, month, countryCode: holidayCountryCode });
+    },
+    enabled: scheduleMode === "monthly" && Boolean(scheduleMonth),
   });
 
   const venuesQuery = useQuery({
@@ -103,11 +169,11 @@ export function AdminTimeslotsPage() {
   });
 
   const existingDayTimeslotsQuery = useQuery({
-    queryKey: ["admin-timeslots-preview", selectedDate],
+    queryKey: ["admin-timeslots-preview", scheduleMode, selectedDate, scheduleMonth],
     queryFn: () =>
       api.listTimeslots({
-        dateFrom: dayBounds.startIso,
-        dateTo: dayBounds.endIso,
+        dateFrom: scheduleMode === "monthly" ? monthBounds.startIso : dayBounds.startIso,
+        dateTo: scheduleMode === "monthly" ? monthBounds.endIso : dayBounds.endIso,
       }),
   });
 
@@ -152,6 +218,18 @@ export function AdminTimeslotsPage() {
   }, [filterVenueId, filteredVenues]);
 
   useEffect(() => {
+    if (!holidaysQuery.data) {
+      return;
+    }
+    setExcludedHolidayDates((current) => {
+      if (current.length) {
+        return current.filter((date) => holidaysQuery.data?.holidays.some((holiday) => holiday.date === date));
+      }
+      return holidaysQuery.data.holidays.map((holiday) => holiday.date);
+    });
+  }, [holidaysQuery.data]);
+
+  useEffect(() => {
     if (filterCourtId && !filteredCourts.some((court) => court.id === filterCourtId)) {
       setFilterCourtId("");
     }
@@ -163,31 +241,38 @@ export function AdminTimeslotsPage() {
 
   const previewSlots = useMemo(() => {
     const parsedSlotMinutes = Number(slotMinutes);
+    const scheduleDates =
+      scheduleMode === "monthly"
+        ? buildMonthlyScheduleDates(scheduleMonth, monthlyWeekdays, excludedHolidayDates)
+        : [selectedDate];
 
-    if (!selectedDate || !windowStart || !windowEnd || !Number.isFinite(parsedSlotMinutes) || parsedSlotMinutes <= 0) {
+    if (!scheduleDates.length || !windowStart || !windowEnd || !Number.isFinite(parsedSlotMinutes) || parsedSlotMinutes <= 0) {
       return [] as Array<{ startsAt: string; endsAt: string }>;
     }
 
     const slots: Array<{ startsAt: string; endsAt: string }> = [];
-    const start = new Date(`${selectedDate}T${windowStart}`);
-    const endLimit = new Date(`${selectedDate}T${windowEnd}`);
 
-    if (Number.isNaN(start.getTime()) || Number.isNaN(endLimit.getTime()) || start >= endLimit) {
-      return slots;
-    }
+    for (const dateValue of scheduleDates) {
+      const start = new Date(`${dateValue}T${windowStart}`);
+      const endLimit = new Date(`${dateValue}T${windowEnd}`);
 
-    let currentStart = new Date(start);
-    while (currentStart < endLimit) {
-      const currentEnd = new Date(currentStart.getTime() + parsedSlotMinutes * 60_000);
-      slots.push({
-        startsAt: currentStart.toISOString(),
-        endsAt: currentEnd.toISOString(),
-      });
-      currentStart = currentEnd;
+      if (Number.isNaN(start.getTime()) || Number.isNaN(endLimit.getTime()) || start >= endLimit) {
+        continue;
+      }
+
+      let currentStart = new Date(start);
+      while (currentStart < endLimit) {
+        const currentEnd = new Date(currentStart.getTime() + parsedSlotMinutes * 60_000);
+        slots.push({
+          startsAt: currentStart.toISOString(),
+          endsAt: currentEnd.toISOString(),
+        });
+        currentStart = currentEnd;
+      }
     }
 
     return slots;
-  }, [selectedDate, slotMinutes, windowEnd, windowStart]);
+  }, [excludedHolidayDates, monthlyWeekdays, scheduleMode, scheduleMonth, selectedDate, slotMinutes, windowEnd, windowStart]);
 
   const previewSummary = useMemo(() => {
     const selectedCourtSet = new Set(bulkCourtIds);
@@ -222,16 +307,18 @@ export function AdminTimeslotsPage() {
     const totalCreateCount = rows.reduce((sum, row) => sum + row.createCount, 0);
     const totalSkippedCount = rows.reduce((sum, row) => sum + row.skippedCount, 0);
     const crossesMidnight = rows.some(
-      (row) => new Date(row.endsAt).toISOString().slice(0, 10) !== selectedDate,
+      (row) => new Date(row.endsAt).toISOString().slice(0, 10) !== new Date(row.startsAt).toISOString().slice(0, 10),
     );
+    const uniqueDates = Array.from(new Set(rows.map((row) => new Date(row.startsAt).toISOString().slice(0, 10))));
 
     return {
       rows,
       totalCreateCount,
       totalSkippedCount,
       crossesMidnight,
+      uniqueDates,
     };
-  }, [bulkCourtIds, courtsById, existingDayTimeslotsQuery.data, previewSlots, selectedDate]);
+  }, [bulkCourtIds, courtsById, existingDayTimeslotsQuery.data, previewSlots]);
 
   const selectedVenue = filterVenueId ? venuesById.get(filterVenueId) ?? null : null;
 
@@ -284,7 +371,50 @@ export function AdminTimeslotsPage() {
   }, [filterCourtId, filteredCourts, timeslotsQuery.data]);
 
   const bulkCreateMutation = useMutation({
-    mutationFn: api.bulkCreateTimeslots,
+    mutationFn: async (input: {
+      mode: "daily" | "monthly";
+      court_ids: string[];
+      window_starts_at: string;
+      window_ends_at: string;
+      slot_minutes: number;
+      capacity: number;
+      price: number | null;
+      is_active: boolean;
+      dates?: string[];
+    }) => {
+      if (input.mode === "daily") {
+        return api.bulkCreateTimeslots(input);
+      }
+
+      const dates = input.dates ?? [];
+      let createdCount = 0;
+      let skippedCount = 0;
+      const createdSlots: TimeSlot[] = [];
+      const skippedReasons: string[] = [];
+
+      for (const dateValue of dates) {
+        const result = await api.bulkCreateTimeslots({
+          court_ids: input.court_ids,
+          window_starts_at: combineDateTime(dateValue, windowStart),
+          window_ends_at: combineDateTime(dateValue, windowEnd),
+          slot_minutes: input.slot_minutes,
+          capacity: input.capacity,
+          price: input.price,
+          is_active: input.is_active,
+        });
+        createdCount += result.created_count;
+        skippedCount += result.skipped_count;
+        createdSlots.push(...result.created_slots);
+        skippedReasons.push(...result.skipped_reasons);
+      }
+
+      return {
+        created_count: createdCount,
+        skipped_count: skippedCount,
+        created_slots: createdSlots,
+        skipped_reasons: skippedReasons,
+      };
+    },
     onSuccess: (result) => {
       setBulkError(null);
       setEditSuccess(null);
@@ -323,6 +453,18 @@ export function AdminTimeslotsPage() {
     );
   }
 
+  function toggleWeekday(weekday: number) {
+    setMonthlyWeekdays((current) =>
+      current.includes(weekday) ? current.filter((value) => value !== weekday) : [...current, weekday].sort((a, b) => a - b),
+    );
+  }
+
+  function toggleHolidayDate(dateValue: string) {
+    setExcludedHolidayDates((current) =>
+      current.includes(dateValue) ? current.filter((value) => value !== dateValue) : [...current, dateValue].sort(),
+    );
+  }
+
   function handleBulkSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBulkError(null);
@@ -346,7 +488,23 @@ export function AdminTimeslotsPage() {
       return;
     }
 
+    const monthlyDates =
+      scheduleMode === "monthly"
+        ? buildMonthlyScheduleDates(scheduleMonth, monthlyWeekdays, excludedHolidayDates)
+        : [];
+
+    if (scheduleMode === "monthly" && !monthlyWeekdays.length) {
+      setBulkError("Seleccioná al menos un día de la semana para armar la grilla mensual.");
+      return;
+    }
+
+    if (scheduleMode === "monthly" && !monthlyDates.length) {
+      setBulkError("No quedaron fechas disponibles para el mes elegido con los filtros actuales.");
+      return;
+    }
+
     bulkCreateMutation.mutate({
+      mode: scheduleMode,
       court_ids: bulkCourtIds,
       window_starts_at: combineDateTime(selectedDate, windowStart),
       window_ends_at: combineDateTime(selectedDate, windowEnd),
@@ -354,6 +512,7 @@ export function AdminTimeslotsPage() {
       capacity: parsedCapacity,
       price: price ? Number(price) : null,
       is_active: isActive,
+      dates: monthlyDates,
     });
   }
 
@@ -477,12 +636,112 @@ export function AdminTimeslotsPage() {
               </div>
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-date">
-                Día
-              </label>
-              <input id="bulk-date" className="field" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  scheduleMode === "daily" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+                type="button"
+                onClick={() => setScheduleMode("daily")}
+              >
+                Carga diaria
+              </button>
+              <button
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  scheduleMode === "monthly" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+                type="button"
+                onClick={() => setScheduleMode("monthly")}
+              >
+                Grilla mensual
+              </button>
             </div>
+
+            {scheduleMode === "daily" ? (
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-date">
+                  Día
+                </label>
+                <input id="bulk-date" className="field" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-month">
+                      Mes de trabajo
+                    </label>
+                    <input id="bulk-month" className="field" type="month" value={scheduleMonth} onChange={(event) => setScheduleMonth(event.target.value)} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="holiday-country">
+                      País de feriados
+                    </label>
+                    <select id="holiday-country" className="field" value={holidayCountryCode} onChange={(event) => setHolidayCountryCode(event.target.value.toUpperCase())}>
+                      <option value="AR">Argentina</option>
+                      <option value="UY">Uruguay</option>
+                      <option value="CL">Chile</option>
+                      <option value="BR">Brasil</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 block text-sm font-semibold text-slate-700">Días de la semana</p>
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                    {weekdayOptions.map((weekday) => (
+                      <button
+                        key={weekday.value}
+                        className={`rounded-2xl border px-3 py-2 text-sm font-semibold transition ${
+                          monthlyWeekdays.includes(weekday.value)
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                        type="button"
+                        onClick={() => toggleWeekday(weekday.value)}
+                      >
+                        {weekday.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-900">Feriados del mes</p>
+                  {holidaysQuery.isLoading ? (
+                    <p className="mt-2 text-sm text-slate-500">Consultando calendario oficial...</p>
+                  ) : holidaysQuery.error ? (
+                    <p className="mt-2 text-sm text-rose-600">
+                      {holidaysQuery.error instanceof Error ? holidaysQuery.error.message : "No pudimos cargar los feriados."}
+                    </p>
+                  ) : holidaysQuery.data?.holidays.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {holidaysQuery.data.holidays.map((holiday) => {
+                        const checked = excludedHolidayDates.includes(holiday.date);
+                        return (
+                          <label
+                            key={holiday.date}
+                            className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                              checked ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500"
+                            }`}
+                          >
+                            <input
+                              className="mr-2"
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleHolidayDate(holiday.date)}
+                            />
+                            {holiday.date} · {holiday.local_name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500">No encontramos feriados oficiales para este mes.</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div>
               <p className="mb-2 block text-sm font-semibold text-slate-700">Canchas</p>
@@ -574,8 +833,12 @@ export function AdminTimeslotsPage() {
                   <p className="text-sm font-semibold text-slate-900">Vista previa del bloque</p>
                   <p className="text-sm text-slate-500">
                     {previewSlots.length
-                      ? `Se crearían ${previewSummary.totalCreateCount} turnos y se omitirían ${previewSummary.totalSkippedCount}.`
-                      : "Completá el rango y la duración para ver los turnos que se van a crear."}
+                      ? scheduleMode === "monthly"
+                        ? `Se trabajarían ${previewSummary.uniqueDates.length} fechas, con ${previewSummary.totalCreateCount} turnos a crear y ${previewSummary.totalSkippedCount} a omitir.`
+                        : `Se crearían ${previewSummary.totalCreateCount} turnos y se omitirían ${previewSummary.totalSkippedCount}.`
+                      : scheduleMode === "monthly"
+                        ? "Elegí el mes, los días y los feriados a excluir para ver la grilla completa."
+                        : "Completá el rango y la duración para ver los turnos que se van a crear."}
                   </p>
                 </div>
                 {previewSlots.length ? (
@@ -594,6 +857,11 @@ export function AdminTimeslotsPage() {
                         ? "Las canchas elegidas pertenecen a distintas zonas horarias. Revisá la sede antes de confirmar."
                         : "Seleccioná una cancha para ver la referencia horaria de la sede."}
                   </p>
+                  {scheduleMode === "monthly" ? (
+                    <p className="mt-1 text-xs font-medium text-slate-400">
+                      Fechas incluidas: {previewSummary.uniqueDates.length}. Los feriados tildados se excluyen de la generación mensual.
+                    </p>
+                  ) : null}
 
                   {existingDayTimeslotsQuery.isLoading ? (
                     <div className="mt-3">
@@ -662,12 +930,12 @@ export function AdminTimeslotsPage() {
               {bulkCreateMutation.isPending ? (
                 <span className="inline-flex items-center gap-2">
                   <LoaderCircle className="animate-spin" size={16} />
-                  Generando turnos...
+                  {scheduleMode === "monthly" ? "Generando grilla mensual..." : "Generando turnos..."}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2">
                   <Plus size={16} />
-                  Crear bloque de turnos
+                  {scheduleMode === "monthly" ? "Crear grilla mensual" : "Crear bloque de turnos"}
                 </span>
               )}
             </button>

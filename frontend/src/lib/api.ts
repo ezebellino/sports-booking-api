@@ -6,7 +6,7 @@ export type User = {
   id: string;
   email: string;
   full_name: string | null;
-  role: "admin" | "user";
+  role: "admin" | "staff" | "user";
   organization_id: string | null;
   organization_name: string | null;
   organization_slug: string | null;
@@ -19,6 +19,13 @@ export type Organization = {
   name: string;
   slug: string;
   is_active: boolean;
+};
+
+export type OrganizationRequestContext = {
+  organization: Organization;
+  branding_name: string | null;
+  logo_url: string | null;
+  primary_color: string | null;
 };
 
 export type OrganizationSettings = {
@@ -42,7 +49,7 @@ export type StaffInvitation = {
   organization_id: string;
   email: string;
   full_name: string | null;
-  role: "admin" | "user";
+  role: "admin" | "staff" | "user";
   status: string;
   invite_token: string;
   expires_at: string;
@@ -142,6 +149,24 @@ export type NotificationStatus = {
     detail: string;
     severity: "required" | "optional";
   }>;
+};
+
+export type HolidayCalendarItem = {
+  date: string;
+  local_name: string;
+  name: string;
+  country_code: string;
+  global_holiday: boolean;
+  counties: string[] | null;
+  launch_year: number | null;
+  types: string[];
+};
+
+export type HolidayCalendar = {
+  country_code: string;
+  year: number;
+  month: number | null;
+  holidays: HolidayCalendarItem[];
 };
 
 export type OrganizationOnboardingResult = {
@@ -338,6 +363,8 @@ export const api = {
 
   getCurrentOrganization: () => request<Organization>("/organizations/current", { auth: true }),
 
+  getRequestOrganizationContext: () => request<OrganizationRequestContext>("/organizations/request-context"),
+
   updateCurrentOrganization: (input: { name?: string; slug?: string; is_active?: boolean }) =>
     request<Organization>("/organizations/current", {
       method: "PATCH",
@@ -376,7 +403,7 @@ export const api = {
   createStaffInvitation: (input: {
     email: string;
     full_name?: string | null;
-    role: "admin" | "user";
+    role: "admin" | "staff" | "user";
     expires_in_days?: number;
   }) =>
     request<StaffInvitation>("/organizations/current/staff-invitations", {
@@ -430,6 +457,18 @@ export const api = {
   },
 
   getNotificationStatus: () => request<NotificationStatus>("/admin/notification-status", { auth: true }),
+
+  getAdminHolidays: (params: { year: number; month?: number; countryCode?: string }) => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("year", String(params.year));
+    if (params.month) {
+      searchParams.set("month", String(params.month));
+    }
+    if (params.countryCode) {
+      searchParams.set("country_code", params.countryCode);
+    }
+    return request<HolidayCalendar>(`/admin/holidays?${searchParams.toString()}`, { auth: true });
+  },
 
   listVenues: (sportId?: string | null) =>
     request<Venue[]>("/venues?limit=100").then((venues) =>

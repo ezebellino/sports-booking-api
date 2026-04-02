@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import get_request_organization, require_admin
+from app.api.deps.auth import get_request_organization, require_staff_or_admin
 from app.db.session import get_db
+from app.models.booking import Booking
 from app.models.court import Court
 from app.models.organization import Organization
 from app.models.sport import Sport
@@ -16,7 +19,8 @@ router = APIRouter(prefix="/courts", tags=["courts"])
 COURT_NOT_FOUND_DETAIL = "Cancha no encontrada"
 VENUE_NOT_FOUND_DETAIL = "Sede no encontrada"
 SPORT_NOT_FOUND_DETAIL = "Deporte no encontrado"
-COURT_DELETE_BLOCKED_DETAIL = "No se puede eliminar una cancha con turnos asociados"
+COURT_DELETE_BLOCKED_FUTURE_TIMESLOTS_DETAIL = "No se puede eliminar una cancha con turnos futuros asociados"
+COURT_DELETE_BLOCKED_BOOKINGS_DETAIL = "No se puede eliminar una cancha con reservas asociadas"
 VENUE_SPORT_MISMATCH_DETAIL = "La sede elegida solo permite otro deporte"
 
 
@@ -24,7 +28,7 @@ VENUE_SPORT_MISMATCH_DETAIL = "La sede elegida solo permite otro deporte"
 def create_court(
     payload: CourtCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     venue = db.query(Venue).filter(Venue.id == payload.venue_id, Venue.organization_id == current_admin.organization_id).first()
     if not venue:
@@ -70,7 +74,7 @@ def update_court(
     court_id: str,
     payload: CourtUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
     court = db.query(Court).filter(Court.id == court_id, Court.organization_id == current_admin.organization_id).first()
     if not court:
@@ -107,13 +111,29 @@ def update_court(
 def delete_court(
     court_id: str,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_staff_or_admin),
 ):
+    now = datetime.now(timezone.utc)
     court = db.query(Court).filter(Court.id == court_id, Court.organization_id == current_admin.organization_id).first()
     if not court:
         raise HTTPException(status_code=404, detail=COURT_NOT_FOUND_DETAIL)
-    if court.timeslots:
-        raise HTTPException(status_code=409, detail=COURT_DELETE_BLOCKED_DETAIL)
+
+    has_bookings = (
+        db.query(Booking.id)
+        .join(TimeSlot, TimeSlot.id == Booking.timeslot_id)
+        .filter(TimeSlot.court_id == court.id)
+        .first()
+    )
+    if has_bookings:
+        raise HTTPException(status_code=409, detail=COURT_DELETE_BLOCKED_BOOKINGS_DETAIL)
+
+    has_future_timeslots = (
+        db.query(TimeSlot.id)
+        .filter(TimeSlot.court_id == court.id, TimeSlot.starts_at >= now)
+        .first()
+    )
+    if has_future_timeslots:
+        raise HTTPException(status_code=409, detail=COURT_DELETE_BLOCKED_FUTURE_TIMESLOTS_DETAIL)
 
     db.delete(court)
     db.commit()
