@@ -4,8 +4,10 @@ import { useAuth } from "./modules/auth/auth-context";
 import { AdminInventoryPage } from "./pages/admin-inventory-page";
 import { AdminMetricsPage } from "./pages/admin-metrics-page";
 import { AdminOrganizationPage } from "./pages/admin-organization-page";
+import { AdminStaffPage } from "./pages/admin-staff-page";
 import { AdminTimeslotsPage } from "./pages/admin-timeslots-page";
 import { AdminWhatsappPage } from "./pages/admin-whatsapp-page";
+import { AcceptInvitePage } from "./pages/accept-invite-page";
 import { ExplorePage } from "./pages/explore-page";
 import { HomePage } from "./pages/home-page";
 import { LoginPage } from "./pages/login-page";
@@ -68,6 +70,7 @@ function AppShell() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/start-complex" element={<StartComplexPage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route
             path="/bookings"
@@ -82,6 +85,14 @@ function AppShell() {
             element={
               <AdminRoute>
                 <AdminOrganizationPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/staff"
+            element={
+              <AdminRoute>
+                <AdminStaffPage />
               </AdminRoute>
             }
           />

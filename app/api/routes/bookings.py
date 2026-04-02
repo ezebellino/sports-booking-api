@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps.auth import AUTH_ERROR_DETAIL
+from app.api.deps.auth import AUTH_ERROR_DETAIL, get_request_organization
 from app.api.routes.auth import oauth2_scheme
 from app.core.booking_policy import (
     booking_policy_message,
@@ -22,6 +22,7 @@ from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
+from app.models.organization import Organization
 from app.models.sport import Sport
 from app.models.timeslot import TimeSlot
 from app.models.user import User
@@ -56,8 +57,8 @@ def count_confirmed_bookings(db: Session, timeslot_id: UUID) -> int:
     )
 
 
-def booking_policy_payload(sport: Sport | None = None) -> BookingPolicyPublic:
-    policy = resolve_policy_for_sport(sport)
+def booking_policy_payload(sport: Sport | None = None, organization_settings=None) -> BookingPolicyPublic:
+    policy = resolve_policy_for_sport(sport, organization_settings)
     return BookingPolicyPublic(
         sport_id=policy.sport_id,
         sport_name=policy.sport_name,
@@ -163,11 +164,12 @@ def serialize_booking_detail(booking: Booking, db: Session, now: datetime | None
 def get_booking_policies(
     sport_id: UUID | None = Query(default=None),
     db: Session = Depends(get_db),
+    organization = Depends(get_request_organization),
 ):
     sport = db.get(Sport, sport_id) if sport_id else None
     if sport_id and sport is None:
         raise HTTPException(status_code=404, detail="Deporte no encontrado")
-    return booking_policy_payload(sport)
+    return booking_policy_payload(sport, organization.settings if organization else None)
 
 
 @router.post("", response_model=BookingPublic, status_code=201)
@@ -179,6 +181,7 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
     timeslot = db.execute(
         select(TimeSlot)
         .options(
+            joinedload(TimeSlot.organization).joinedload(Organization.settings),
             joinedload(TimeSlot.court).joinedload(Court.sport),
             joinedload(TimeSlot.court).joinedload(Court.venue),
         )
@@ -215,6 +218,7 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
         booking = db.execute(
             select(Booking)
             .options(
+                joinedload(Booking.organization).joinedload(Organization.settings),
                 joinedload(Booking.user),
                 joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.venue),
                 joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
@@ -237,6 +241,7 @@ def create_booking(payload: BookingCreate, db: Session = Depends(get_db), user_i
     booking = db.execute(
         select(Booking)
         .options(
+            joinedload(Booking.organization).joinedload(Organization.settings),
             joinedload(Booking.user),
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.venue),
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
@@ -256,6 +261,7 @@ def list_bookings(db: Session = Depends(get_db), user_id: str = Depends(get_curr
     bookings = db.execute(
         select(Booking)
         .options(
+            joinedload(Booking.organization).joinedload(Organization.settings),
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.venue),
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
         )
@@ -273,6 +279,7 @@ def cancel_booking(booking_id: str, db: Session = Depends(get_db), user_id: str 
     booking = db.execute(
         select(Booking)
         .options(
+            joinedload(Booking.organization).joinedload(Organization.settings),
             joinedload(Booking.user),
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.sport),
             joinedload(Booking.timeslot).joinedload(TimeSlot.court).joinedload(Court.venue),

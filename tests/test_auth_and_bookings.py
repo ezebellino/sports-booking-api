@@ -4,7 +4,9 @@ from app.core.security import get_password_hash
 from app.models.booking import Booking
 from app.models.court import Court
 from app.models.organization import Organization
+from app.models.organization_settings import OrganizationSettings
 from app.models.sport import Sport
+from app.models.staff_invitation import StaffInvitation
 from app.models.timeslot import TimeSlot
 from app.models.user import User
 from app.models.venue import Venue
@@ -1306,4 +1308,199 @@ def test_admin_can_view_and_update_current_organization(client, db_session):
     assert update_response.status_code == 200
     assert update_response.json()["name"] == "Complejo Centro Renovado"
     assert update_response.json()["slug"] == "centro-renovado"
+
+
+def test_onboarding_creates_organization_settings_row(client, db_session):
+    response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Branding",
+            "admin_full_name": "Brand Admin",
+            "admin_email": "branding@saas.com",
+            "admin_password": "password123",
+        },
+    )
+
+    assert response.status_code == 201
+    organization_id = response.json()["organization"]["id"]
+
+    settings = db_session.get(OrganizationSettings, organization_id)
+    assert settings is not None
+    assert settings.branding_name == "Complejo Branding"
+
+
+def test_admin_can_view_and_update_current_organization_settings(client):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Settings",
+            "admin_full_name": "Settings Admin",
+            "admin_email": "settings@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    current_response = client.get("/organizations/current/settings", headers=auth_headers(admin_token))
+    assert current_response.status_code == 200
+    assert current_response.json()["branding_name"] == "Complejo Settings"
+
+    update_response = client.patch(
+        "/organizations/current/settings",
+        json={
+            "branding_name": "Complejo Settings Pro",
+            "primary_color": "#123456",
+            "booking_min_lead_minutes": 45,
+            "cancellation_min_lead_minutes": 180,
+            "whatsapp_provider": "meta_cloud",
+            "whatsapp_phone_number_id": "123456789",
+            "whatsapp_template_language": "es_AR",
+            "whatsapp_template_booking_confirmed": "booking_confirmed_org",
+            "whatsapp_template_booking_cancelled": "booking_cancelled_org",
+            "whatsapp_recipient_override": "+54 9 11 4455 6677",
+        },
+        headers=auth_headers(admin_token),
+    )
+
+    assert update_response.status_code == 200
+    payload = update_response.json()
+    assert payload["branding_name"] == "Complejo Settings Pro"
+    assert payload["primary_color"] == "#123456"
+    assert payload["booking_min_lead_minutes"] == 45
+    assert payload["cancellation_min_lead_minutes"] == 180
+    assert payload["whatsapp_provider"] == "meta_cloud"
+    assert payload["whatsapp_phone_number_id"] == "123456789"
+    assert payload["whatsapp_template_booking_confirmed"] == "booking_confirmed_org"
+    assert payload["whatsapp_template_booking_cancelled"] == "booking_cancelled_org"
+    assert payload["whatsapp_recipient_override"] == "5491144556677"
+
+
+def test_staff_invitation_flow_creates_user_in_same_organization(client, db_session):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Staff",
+            "admin_full_name": "Staff Admin",
+            "admin_email": "staff-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+    organization_id = onboard_response.json()["organization"]["id"]
+
+    create_response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+            "email": "nuevo-staff@saas.com",
+            "full_name": "Nuevo Staff",
+            "role": "admin",
+            "expires_in_days": 10,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert create_response.status_code == 201
+    invitation_payload = create_response.json()
+    assert invitation_payload["status"] == "pending"
+
+    list_response = client.get("/organizations/current/staff-invitations", headers=auth_headers(admin_token))
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+
+    accept_response = client.post(
+        "/organizations/staff-invitations/accept",
+        json={
+            "token": invitation_payload["invite_token"],
+            "full_name": "Nuevo Staff",
+            "password": "password123",
+            "whatsapp_number": "+54 9 11 2233 1122",
+            "whatsapp_opt_in": True,
+        },
+    )
+    assert accept_response.status_code == 200
+    accepted_payload = accept_response.json()
+    assert accepted_payload["organization"]["id"] == organization_id
+    assert accepted_payload["access_token"]
+
+    invited_user = db_session.query(User).filter(User.email == "nuevo-staff@saas.com").first()
+    invitation = db_session.query(StaffInvitation).filter(StaffInvitation.email == "nuevo-staff@saas.com").first()
+    assert invited_user is not None
+    assert str(invited_user.organization_id) == organization_id
+    assert invited_user.role == "admin"
+    assert invited_user.whatsapp_number == "5491122331122"
+    assert invitation is not None
+    assert invitation.status == "accepted"
+    assert invitation.accepted_at is not None
+
+
+def test_booking_policies_use_organization_defaults_when_sport_has_no_override(client):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Policy",
+            "admin_full_name": "Policy Admin",
+            "admin_email": "policy-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    update_response = client.patch(
+        "/organizations/current/settings",
+        json={
+            "booking_min_lead_minutes": 75,
+            "cancellation_min_lead_minutes": 210,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert update_response.status_code == 200
+
+    policy_response = client.get("/bookings/policies", headers=auth_headers(admin_token))
+    assert policy_response.status_code == 200
+    payload = policy_response.json()
+    assert payload["uses_default_policy"] is True
+    assert payload["min_booking_lead_minutes"] == 75
+    assert payload["cancellation_min_lead_minutes"] == 210
+    assert payload["admin_summary"] == "Política general del complejo."
+
+
+def test_admin_notification_status_uses_tenant_level_whatsapp_settings(client):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo WhatsApp",
+            "admin_full_name": "WhatsApp Admin",
+            "admin_email": "whatsapp-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    update_response = client.patch(
+        "/organizations/current/settings",
+        json={
+            "whatsapp_provider": "meta_cloud",
+            "whatsapp_access_token": "tenant-token",
+            "whatsapp_phone_number_id": "tenant-phone-id",
+            "whatsapp_template_language": "es_AR",
+            "whatsapp_template_booking_confirmed": "tenant_booking_ok",
+            "whatsapp_template_booking_cancelled": "tenant_booking_cancel",
+            "whatsapp_recipient_override": "+54 9 11 6677 8899",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert update_response.status_code == 200
+
+    status_response = client.get("/admin/notification-status", headers=auth_headers(admin_token))
+    assert status_response.status_code == 200
+    payload = status_response.json()
+    assert payload["provider"] == "meta_cloud"
+    assert payload["configured"] is True
+    assert payload["ready_for_live_send"] is True
+    assert payload["booking_confirmed_template"] == "tenant_booking_ok"
+    assert payload["booking_cancelled_template"] == "tenant_booking_cancel"
+    assert payload["recipient_override"] == "5491166778899"
 

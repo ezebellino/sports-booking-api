@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import require_admin
+from app.core.organization_settings import get_or_create_organization_settings
 from app.core.whatsapp import notification_status_payload
 from app.models.organization import Organization
 from app.db.session import get_db
@@ -48,8 +49,13 @@ def admin_me(current_admin: User = Depends(require_admin)):
 
 
 @router.get("/notification-status")
-def get_notification_status(_: User = Depends(require_admin)):
-    return notification_status_payload()
+def get_notification_status(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    organization = current_admin.organization
+    settings = get_or_create_organization_settings(db, organization) if organization else None
+    return notification_status_payload(settings)
 
 
 @router.get("/tenant-integrity", response_model=TenantIntegrityPublic)

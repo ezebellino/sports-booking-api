@@ -1,21 +1,31 @@
 import re
+import secrets
 import unicodedata
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import require_admin
-from app.api.routes.auth import ensure_user_organization, serialize_user
+from app.api.routes.auth import ensure_user_organization
+from app.core.organization_settings import get_or_create_organization_settings
 from app.core.security import create_access_token, create_refresh_token, get_password_hash
 from app.core.whatsapp import normalize_whatsapp_number
 from app.db.session import get_db
 from app.models.organization import Organization
+from app.models.staff_invitation import StaffInvitation
 from app.models.user import User
 from app.schemas.organization import (
     OrganizationOnboardingCreate,
     OrganizationOnboardingPublic,
     OrganizationPublic,
+    OrganizationSettingsPublic,
+    OrganizationSettingsUpdate,
     OrganizationUpdate,
+    StaffInvitationAccept,
+    StaffInvitationAcceptancePublic,
+    StaffInvitationCreate,
+    StaffInvitationPublic,
 )
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
@@ -24,6 +34,8 @@ ORGANIZATION_NOT_FOUND_DETAIL = "Organización no encontrada"
 ORGANIZATION_NAME_EXISTS_DETAIL = "Ya existe un complejo con ese nombre"
 ORGANIZATION_SLUG_EXISTS_DETAIL = "Ya existe un complejo con ese identificador"
 EMAIL_EXISTS_DETAIL = "Email ya registrado"
+INVITATION_NOT_FOUND_DETAIL = "Invitación no encontrada o vencida"
+INVITATION_ALREADY_USED_DETAIL = "La invitación ya fue utilizada"
 
 
 def slugify_organization_name(value: str) -> str:
@@ -42,6 +54,39 @@ def unique_organization_slug(db: Session, requested_slug: str) -> str:
         suffix += 1
 
     return slug
+
+
+def build_auth_payload(user: User) -> dict[str, str]:
+    return {
+        "access_token": create_access_token(
+            subject=str(user.id),
+            extra={
+                "email": user.email,
+                "role": user.role,
+                "organization_id": str(user.organization_id),
+            },
+        ),
+        "refresh_token": create_refresh_token(subject=str(user.id)),
+        "token_type": "bearer",
+    }
+
+
+def serialize_settings(settings) -> OrganizationSettingsPublic:
+    return OrganizationSettingsPublic(
+        organization_id=settings.organization_id,
+        branding_name=settings.branding_name,
+        logo_url=settings.logo_url,
+        primary_color=settings.primary_color,
+        booking_min_lead_minutes=settings.booking_min_lead_minutes,
+        cancellation_min_lead_minutes=settings.cancellation_min_lead_minutes,
+        whatsapp_provider=settings.whatsapp_provider,
+        whatsapp_phone_number_id=settings.whatsapp_phone_number_id,
+        whatsapp_template_language=settings.whatsapp_template_language,
+        whatsapp_template_booking_confirmed=settings.whatsapp_template_booking_confirmed,
+        whatsapp_template_booking_cancelled=settings.whatsapp_template_booking_cancelled,
+        whatsapp_recipient_override=settings.whatsapp_recipient_override,
+        has_whatsapp_access_token=bool(settings.whatsapp_access_token),
+    )
 
 
 @router.post("/onboard", response_model=OrganizationOnboardingPublic, status_code=201)
@@ -64,6 +109,11 @@ def onboard_organization(payload: OrganizationOnboardingCreate, db: Session = De
     db.add(organization)
     db.flush()
 
+    settings = get_or_create_organization_settings(db, organization)
+    settings.branding_name = payload.organization_name
+    db.add(settings)
+    db.flush()
+
     whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
     whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
 
@@ -81,22 +131,11 @@ def onboard_organization(payload: OrganizationOnboardingCreate, db: Session = De
     db.refresh(organization)
     db.refresh(admin_user)
 
-    access_token = create_access_token(
-        subject=str(admin_user.id),
-        extra={
-            "email": admin_user.email,
-            "role": admin_user.role,
-            "organization_id": str(admin_user.organization_id),
-        },
-    )
-    refresh_token = create_refresh_token(subject=str(admin_user.id))
-
+    tokens = build_auth_payload(admin_user)
     return OrganizationOnboardingPublic(
         organization=organization,
         user_id=admin_user.id,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        token_type="bearer",
+        **tokens,
     )
 
 
@@ -128,24 +167,17 @@ def update_current_organization(
         return organization
 
     if "name" in data and data["name"]:
-        clash = (
-            db.query(Organization)
-            .filter(Organization.name.ilike(data["name"]), Organization.id != organization.id)
-            .first()
-        )
+        clash = db.query(Organization).filter(Organization.name.ilike(data["name"]), Organization.id != organization.id).first()
         if clash:
             raise HTTPException(status_code=409, detail=ORGANIZATION_NAME_EXISTS_DETAIL)
         organization.name = data["name"].strip()
 
     if "slug" in data and data["slug"]:
-        clash = (
-            db.query(Organization)
-            .filter(Organization.slug == data["slug"], Organization.id != organization.id)
-            .first()
-        )
+        normalized_slug = slugify_organization_name(data["slug"])
+        clash = db.query(Organization).filter(Organization.slug == normalized_slug, Organization.id != organization.id).first()
         if clash:
             raise HTTPException(status_code=409, detail=ORGANIZATION_SLUG_EXISTS_DETAIL)
-        organization.slug = slugify_organization_name(data["slug"])
+        organization.slug = normalized_slug
 
     if "is_active" in data and data["is_active"] is not None:
         organization.is_active = data["is_active"]
@@ -153,3 +185,124 @@ def update_current_organization(
     db.commit()
     db.refresh(organization)
     return organization
+
+
+@router.get("/current/settings", response_model=OrganizationSettingsPublic)
+def get_current_organization_settings(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+    settings = get_or_create_organization_settings(db, organization)
+    return serialize_settings(settings)
+
+
+@router.patch("/current/settings", response_model=OrganizationSettingsPublic)
+def update_current_organization_settings(
+    payload: OrganizationSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+    settings = get_or_create_organization_settings(db, organization)
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        if field == "whatsapp_recipient_override":
+            value = normalize_whatsapp_number(value)
+        setattr(settings, field, value)
+
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return serialize_settings(settings)
+
+
+@router.get("/current/staff-invitations", response_model=list[StaffInvitationPublic])
+def list_staff_invitations(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    invitations = (
+        db.query(StaffInvitation)
+        .filter(StaffInvitation.organization_id == current_admin.organization_id)
+        .order_by(StaffInvitation.created_at.desc())
+        .all()
+    )
+    return invitations
+
+
+@router.post("/current/staff-invitations", response_model=StaffInvitationPublic, status_code=201)
+def create_staff_invitation(
+    payload: StaffInvitationCreate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(status_code=409, detail=EMAIL_EXISTS_DETAIL)
+
+    invitation = StaffInvitation(
+        organization_id=current_admin.organization_id,
+        invited_by_user_id=current_admin.id,
+        email=payload.email,
+        full_name=payload.full_name,
+        role=payload.role,
+        invite_token=secrets.token_urlsafe(24),
+        status="pending",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days),
+    )
+    db.add(invitation)
+    db.commit()
+    db.refresh(invitation)
+    return invitation
+
+
+@router.post("/staff-invitations/accept", response_model=StaffInvitationAcceptancePublic)
+def accept_staff_invitation(payload: StaffInvitationAccept, db: Session = Depends(get_db)):
+    invitation = (
+        db.query(StaffInvitation)
+        .options(joinedload(StaffInvitation.organization))
+        .filter(StaffInvitation.invite_token == payload.token)
+        .first()
+    )
+    if not invitation or invitation.expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=404, detail=INVITATION_NOT_FOUND_DETAIL)
+    if invitation.status != "pending":
+        raise HTTPException(status_code=409, detail=INVITATION_ALREADY_USED_DETAIL)
+    if db.query(User).filter(User.email == invitation.email).first():
+        raise HTTPException(status_code=409, detail=EMAIL_EXISTS_DETAIL)
+
+    whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
+    whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
+
+    user = User(
+        email=invitation.email,
+        full_name=(payload.full_name or invitation.full_name or "").strip() or None,
+        hashed_password=get_password_hash(payload.password),
+        role=invitation.role,
+        organization_id=invitation.organization_id,
+        whatsapp_number=whatsapp_number,
+        whatsapp_opt_in=whatsapp_opt_in,
+    )
+    db.add(user)
+
+    invitation.status = "accepted"
+    invitation.accepted_at = datetime.now(timezone.utc)
+    db.add(invitation)
+    db.commit()
+    db.refresh(user)
+    db.refresh(invitation)
+
+    tokens = build_auth_payload(user)
+    return StaffInvitationAcceptancePublic(
+        organization=invitation.organization,
+        user_id=user.id,
+        **tokens,
+    )

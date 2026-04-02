@@ -21,6 +21,34 @@ export type Organization = {
   is_active: boolean;
 };
 
+export type OrganizationSettings = {
+  organization_id: string;
+  branding_name: string | null;
+  logo_url: string | null;
+  primary_color: string | null;
+  booking_min_lead_minutes: number | null;
+  cancellation_min_lead_minutes: number | null;
+  whatsapp_provider: string | null;
+  whatsapp_phone_number_id: string | null;
+  whatsapp_template_language: string | null;
+  whatsapp_template_booking_confirmed: string | null;
+  whatsapp_template_booking_cancelled: string | null;
+  whatsapp_recipient_override: string | null;
+  has_whatsapp_access_token: boolean;
+};
+
+export type StaffInvitation = {
+  id: string;
+  organization_id: string;
+  email: string;
+  full_name: string | null;
+  role: "admin" | "user";
+  status: string;
+  invite_token: string;
+  expires_at: string;
+  accepted_at: string | null;
+};
+
 export type Sport = {
   id: string;
   name: string;
@@ -117,6 +145,14 @@ export type NotificationStatus = {
 };
 
 export type OrganizationOnboardingResult = {
+  organization: Organization;
+  user_id: string;
+  access_token: string;
+  refresh_token: string;
+  token_type: "bearer";
+};
+
+export type StaffInvitationAcceptanceResult = {
   organization: Organization;
   user_id: string;
   access_token: string;
@@ -306,6 +342,59 @@ export const api = {
     request<Organization>("/organizations/current", {
       method: "PATCH",
       auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  getCurrentOrganizationSettings: () =>
+    request<OrganizationSettings>("/organizations/current/settings", { auth: true }),
+
+  updateCurrentOrganizationSettings: (input: {
+    branding_name?: string | null;
+    logo_url?: string | null;
+    primary_color?: string | null;
+    booking_min_lead_minutes?: number | null;
+    cancellation_min_lead_minutes?: number | null;
+    whatsapp_provider?: string | null;
+    whatsapp_access_token?: string | null;
+    whatsapp_phone_number_id?: string | null;
+    whatsapp_template_language?: string | null;
+    whatsapp_template_booking_confirmed?: string | null;
+    whatsapp_template_booking_cancelled?: string | null;
+    whatsapp_recipient_override?: string | null;
+  }) =>
+    request<OrganizationSettings>("/organizations/current/settings", {
+      method: "PATCH",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  listStaffInvitations: () =>
+    request<StaffInvitation[]>("/organizations/current/staff-invitations", { auth: true }),
+
+  createStaffInvitation: (input: {
+    email: string;
+    full_name?: string | null;
+    role: "admin" | "user";
+    expires_in_days?: number;
+  }) =>
+    request<StaffInvitation>("/organizations/current/staff-invitations", {
+      method: "POST",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  acceptStaffInvitation: (input: {
+    token: string;
+    full_name?: string | null;
+    password: string;
+    whatsapp_number?: string | null;
+    whatsapp_opt_in?: boolean;
+  }) =>
+    request<StaffInvitationAcceptanceResult>("/organizations/staff-invitations/accept", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),

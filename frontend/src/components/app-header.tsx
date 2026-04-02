@@ -16,13 +16,9 @@ export function AppHeader() {
             <Ticket size={20} />
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-skyline">
-              Sports Booking
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-skyline">Sports Booking</p>
             <h1 className="text-lg font-extrabold text-slate-950">Reservas deportivas</h1>
-            {isAuthenticated && user ? (
-              <p className="mt-0.5 text-xs font-medium text-slate-500">{organizationLabel}</p>
-            ) : null}
+            {isAuthenticated && user ? <p className="mt-0.5 text-xs font-medium text-slate-500">{organizationLabel}</p> : null}
           </div>
         </Link>
 
@@ -53,9 +49,7 @@ export function AppHeader() {
       {isAuthenticated && user ? (
         <div className="shell-card flex items-center justify-between gap-3 px-4 py-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Sesión activa
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Sesión activa</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <p className="text-sm font-semibold text-slate-800">{user.full_name || user.email}</p>
               <span className="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-700">
@@ -63,9 +57,7 @@ export function AppHeader() {
               </span>
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${
-                  user.role === "admin"
-                    ? "bg-amber-100 text-amber-800"
-                    : "bg-slate-100 text-slate-600"
+                  user.role === "admin" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
                 }`}
               >
                 <Shield size={12} />

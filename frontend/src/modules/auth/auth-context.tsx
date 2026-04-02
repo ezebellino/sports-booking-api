@@ -25,6 +25,13 @@ type AuthContextValue = {
     whatsapp_number?: string | null;
     whatsapp_opt_in?: boolean;
   }) => Promise<void>;
+  acceptStaffInvitation: (input: {
+    token: string;
+    full_name?: string | null;
+    password: string;
+    whatsapp_number?: string | null;
+    whatsapp_opt_in?: boolean;
+  }) => Promise<void>;
   updateProfile: (input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
   logout: () => void;
 };
@@ -92,6 +99,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(currentUser);
   }
 
+  async function acceptStaffInvitation(input: {
+    token: string;
+    full_name?: string | null;
+    password: string;
+    whatsapp_number?: string | null;
+    whatsapp_opt_in?: boolean;
+  }) {
+    const result = await api.acceptStaffInvitation(input);
+    storeTokens({
+      accessToken: result.access_token,
+      refreshToken: result.refresh_token,
+    });
+    const currentUser = await api.me();
+    setUser(currentUser);
+  }
+
   async function updateProfile(input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) {
     const currentUser = await api.updateMe(input);
     setUser(currentUser);
@@ -112,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         onboardOrganization,
+        acceptStaffInvitation,
         updateProfile,
         logout,
       }}

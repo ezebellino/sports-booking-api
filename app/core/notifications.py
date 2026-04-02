@@ -1,8 +1,7 @@
-﻿import logging
+import logging
 from datetime import datetime
 
-from app.core.config import settings
-from app.core.whatsapp import send_whatsapp_template
+from app.core.whatsapp import resolve_whatsapp_config, send_whatsapp_template
 from app.models.booking import Booking
 
 logger = logging.getLogger(__name__)
@@ -13,6 +12,7 @@ def _format_start(booking: Booking) -> str:
     localized = booking.timeslot.starts_at.astimezone(datetime.now().astimezone().tzinfo)
     try:
         from zoneinfo import ZoneInfo
+
         localized = booking.timeslot.starts_at.astimezone(ZoneInfo(venue_timezone))
     except Exception:
         pass
@@ -24,9 +24,12 @@ def send_booking_confirmed_notification(booking: Booking) -> bool:
     if not user.whatsapp_opt_in or not user.whatsapp_number:
         return False
 
+    organization_settings = booking.organization.settings if booking.organization else None
+    whatsapp_config = resolve_whatsapp_config(organization_settings)
+
     return send_whatsapp_template(
         to=user.whatsapp_number,
-        template_name=settings.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED,
+        template_name=whatsapp_config["booking_confirmed_template"] or "booking_confirmation",
         body_parameters=[
             user.full_name or user.email,
             booking.timeslot.court.sport.name,
@@ -34,6 +37,7 @@ def send_booking_confirmed_notification(booking: Booking) -> bool:
             booking.timeslot.court.name,
             _format_start(booking),
         ],
+        organization_settings=organization_settings,
     )
 
 
@@ -42,9 +46,12 @@ def send_booking_cancelled_notification(booking: Booking) -> bool:
     if not user.whatsapp_opt_in or not user.whatsapp_number:
         return False
 
+    organization_settings = booking.organization.settings if booking.organization else None
+    whatsapp_config = resolve_whatsapp_config(organization_settings)
+
     return send_whatsapp_template(
         to=user.whatsapp_number,
-        template_name=settings.WHATSAPP_TEMPLATE_BOOKING_CANCELLED,
+        template_name=whatsapp_config["booking_cancelled_template"] or "booking_cancellation",
         body_parameters=[
             user.full_name or user.email,
             booking.timeslot.court.sport.name,
@@ -52,4 +59,5 @@ def send_booking_cancelled_notification(booking: Booking) -> bool:
             booking.timeslot.court.name,
             _format_start(booking),
         ],
+        organization_settings=organization_settings,
     )

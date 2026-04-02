@@ -129,6 +129,7 @@ def list_timeslots(
         db.query(TimeSlot, func.coalesce(confirmed_bookings_subquery.c.confirmed_bookings, 0).label("confirmed_bookings"))
         .join(Court, Court.id == TimeSlot.court_id)
         .outerjoin(confirmed_bookings_subquery, confirmed_bookings_subquery.c.timeslot_id == TimeSlot.id)
+        .options(joinedload(TimeSlot.organization).joinedload(Organization.settings))
         .options(joinedload(TimeSlot.court).joinedload(Court.sport))
         .filter(TimeSlot.organization_id == organization.id)
     )
@@ -153,6 +154,7 @@ def update_timeslot(
 ):
     timeslot = db.execute(
         select(TimeSlot)
+        .options(joinedload(TimeSlot.organization).joinedload(Organization.settings))
         .options(joinedload(TimeSlot.court).joinedload(Court.sport))
         .where(TimeSlot.id == timeslot_id, TimeSlot.organization_id == current_admin.organization_id)
     ).scalar_one_or_none()

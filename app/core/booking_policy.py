@@ -1,6 +1,7 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 
 from app.core.config import settings
+from app.models.organization_settings import OrganizationSettings
 from app.models.sport import Sport
 from app.models.timeslot import TimeSlot
 
@@ -14,9 +15,20 @@ class ResolvedBookingPolicy:
     uses_default_policy: bool
 
 
-def resolve_policy_for_sport(sport: Sport | None) -> ResolvedBookingPolicy:
-    booking_minutes = settings.BOOKING_MIN_LEAD_MINUTES
-    cancellation_minutes = settings.CANCELLATION_MIN_LEAD_MINUTES
+def resolve_policy_for_sport(
+    sport: Sport | None,
+    organization_settings: OrganizationSettings | None = None,
+) -> ResolvedBookingPolicy:
+    booking_minutes = (
+        organization_settings.booking_min_lead_minutes
+        if organization_settings and organization_settings.booking_min_lead_minutes is not None
+        else settings.BOOKING_MIN_LEAD_MINUTES
+    )
+    cancellation_minutes = (
+        organization_settings.cancellation_min_lead_minutes
+        if organization_settings and organization_settings.cancellation_min_lead_minutes is not None
+        else settings.CANCELLATION_MIN_LEAD_MINUTES
+    )
     uses_default_policy = True
 
     if sport is not None:
@@ -37,10 +49,9 @@ def resolve_policy_for_sport(sport: Sport | None) -> ResolvedBookingPolicy:
 
 
 def resolve_policy_for_timeslot(timeslot: TimeSlot) -> ResolvedBookingPolicy:
-    sport = None
-    if timeslot.court is not None:
-        sport = timeslot.court.sport
-    return resolve_policy_for_sport(sport)
+    organization_settings = timeslot.organization.settings if timeslot.organization is not None else None
+    sport = timeslot.court.sport if timeslot.court is not None else None
+    return resolve_policy_for_sport(sport, organization_settings)
 
 
 def booking_policy_message(policy: ResolvedBookingPolicy) -> str:
@@ -50,7 +61,7 @@ def booking_policy_message(policy: ResolvedBookingPolicy) -> str:
             f"{policy.min_booking_lead_minutes} minutos de anticipación."
         )
     return (
-        f"Las reservas deben hacerse con al menos "
+        "Las reservas deben hacerse con al menos "
         f"{policy.min_booking_lead_minutes} minutos de anticipación."
     )
 
@@ -62,7 +73,7 @@ def cancellation_policy_message(policy: ResolvedBookingPolicy) -> str:
             f"{policy.cancellation_min_lead_minutes} minutos antes del inicio del turno."
         )
     return (
-        f"Las cancelaciones se permiten hasta "
+        "Las cancelaciones se permiten hasta "
         f"{policy.cancellation_min_lead_minutes} minutos antes del inicio del turno."
     )
 

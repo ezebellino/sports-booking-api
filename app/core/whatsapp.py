@@ -1,10 +1,11 @@
-﻿import logging
+import logging
 import re
 from typing import Any
 
 import requests
 
 from app.core.config import settings
+from app.models.organization_settings import OrganizationSettings
 
 logger = logging.getLogger(__name__)
 
@@ -23,26 +24,67 @@ def normalize_whatsapp_number(value: str | None) -> str | None:
     return digits
 
 
-def whatsapp_is_enabled() -> bool:
-    return settings.WHATSAPP_PROVIDER == "meta_cloud"
-
-
-def whatsapp_is_configured() -> bool:
-    return bool(
-        whatsapp_is_enabled()
-        and settings.WHATSAPP_ACCESS_TOKEN
-        and settings.WHATSAPP_PHONE_NUMBER_ID
+def resolve_whatsapp_config(organization_settings: OrganizationSettings | None = None) -> dict[str, Any]:
+    provider = (
+        organization_settings.whatsapp_provider
+        if organization_settings and organization_settings.whatsapp_provider
+        else settings.WHATSAPP_PROVIDER
     )
+    access_token = (
+        organization_settings.whatsapp_access_token
+        if organization_settings and organization_settings.whatsapp_access_token
+        else settings.WHATSAPP_ACCESS_TOKEN
+    )
+    phone_number_id = (
+        organization_settings.whatsapp_phone_number_id
+        if organization_settings and organization_settings.whatsapp_phone_number_id
+        else settings.WHATSAPP_PHONE_NUMBER_ID
+    )
+    template_language = (
+        organization_settings.whatsapp_template_language
+        if organization_settings and organization_settings.whatsapp_template_language
+        else settings.WHATSAPP_TEMPLATE_LANGUAGE
+    )
+    booking_confirmed_template = (
+        organization_settings.whatsapp_template_booking_confirmed
+        if organization_settings and organization_settings.whatsapp_template_booking_confirmed
+        else settings.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED
+    )
+    booking_cancelled_template = (
+        organization_settings.whatsapp_template_booking_cancelled
+        if organization_settings and organization_settings.whatsapp_template_booking_cancelled
+        else settings.WHATSAPP_TEMPLATE_BOOKING_CANCELLED
+    )
+    recipient_override = (
+        organization_settings.whatsapp_recipient_override
+        if organization_settings and organization_settings.whatsapp_recipient_override
+        else settings.WHATSAPP_RECIPIENT_OVERRIDE
+    )
+    enabled = provider == "meta_cloud"
+    configured = bool(enabled and access_token and phone_number_id)
+
+    return {
+        "provider": provider,
+        "enabled": enabled,
+        "configured": configured,
+        "access_token": access_token,
+        "phone_number_id": phone_number_id,
+        "template_language": template_language,
+        "booking_confirmed_template": booking_confirmed_template,
+        "booking_cancelled_template": booking_cancelled_template,
+        "recipient_override": recipient_override,
+    }
 
 
-def notification_status_payload() -> dict[str, Any]:
-    has_access_token = bool(settings.WHATSAPP_ACCESS_TOKEN)
-    has_phone_number_id = bool(settings.WHATSAPP_PHONE_NUMBER_ID)
-    has_booking_confirmed_template = bool(settings.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED)
-    has_booking_cancelled_template = bool(settings.WHATSAPP_TEMPLATE_BOOKING_CANCELLED)
-    recipient_override = settings.WHATSAPP_RECIPIENT_OVERRIDE
-    enabled = whatsapp_is_enabled()
-    configured = whatsapp_is_configured()
+def notification_status_payload(organization_settings: OrganizationSettings | None = None) -> dict[str, Any]:
+    config = resolve_whatsapp_config(organization_settings)
+    has_access_token = bool(config["access_token"])
+    has_phone_number_id = bool(config["phone_number_id"])
+    has_booking_confirmed_template = bool(config["booking_confirmed_template"])
+    has_booking_cancelled_template = bool(config["booking_cancelled_template"])
+    recipient_override = config["recipient_override"]
+    enabled = config["enabled"]
+    configured = config["configured"]
     ready_for_live_send = bool(
         enabled
         and configured
@@ -55,35 +97,35 @@ def notification_status_payload() -> dict[str, Any]:
             "key": "provider",
             "label": "Proveedor Meta Cloud activo",
             "ok": enabled,
-            "detail": "Seleccioná WHATSAPP_PROVIDER=meta_cloud para habilitar el canal real.",
+            "detail": "Seleccioná provider=meta_cloud para habilitar el canal real.",
             "severity": "required",
         },
         {
             "key": "access_token",
             "label": "Access token cargado",
             "ok": has_access_token,
-            "detail": "Hace falta WHATSAPP_ACCESS_TOKEN para autenticar los envíos.",
+            "detail": "Hace falta un access token para autenticar los envíos.",
             "severity": "required",
         },
         {
             "key": "phone_number_id",
             "label": "Phone number ID configurado",
             "ok": has_phone_number_id,
-            "detail": "Hace falta WHATSAPP_PHONE_NUMBER_ID para apuntar al número emisor.",
+            "detail": "Hace falta el phone number ID para apuntar al número emisor.",
             "severity": "required",
         },
         {
             "key": "booking_confirmed_template",
             "label": "Template de confirmación definido",
             "ok": has_booking_confirmed_template,
-            "detail": "Cargá WHATSAPP_TEMPLATE_BOOKING_CONFIRMED con el nombre aprobado en Meta.",
+            "detail": "Cargá el template aprobado para confirmación de reserva.",
             "severity": "required",
         },
         {
             "key": "booking_cancelled_template",
             "label": "Template de cancelación definido",
             "ok": has_booking_cancelled_template,
-            "detail": "Cargá WHATSAPP_TEMPLATE_BOOKING_CANCELLED con el nombre aprobado en Meta.",
+            "detail": "Cargá el template aprobado para cancelación de reserva.",
             "severity": "required",
         },
         {
@@ -98,16 +140,16 @@ def notification_status_payload() -> dict[str, Any]:
     missing_items = [check["label"] for check in checks if check["severity"] == "required" and not check["ok"]]
 
     return {
-        "provider": settings.WHATSAPP_PROVIDER,
+        "provider": config["provider"],
         "enabled": enabled,
         "configured": configured,
         "ready_for_live_send": ready_for_live_send,
         "has_access_token": has_access_token,
         "has_phone_number_id": has_phone_number_id,
         "recipient_override": recipient_override,
-        "template_language": settings.WHATSAPP_TEMPLATE_LANGUAGE,
-        "booking_confirmed_template": settings.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED,
-        "booking_cancelled_template": settings.WHATSAPP_TEMPLATE_BOOKING_CANCELLED,
+        "template_language": config["template_language"],
+        "booking_confirmed_template": config["booking_confirmed_template"],
+        "booking_cancelled_template": config["booking_cancelled_template"],
         "has_booking_confirmed_template": has_booking_confirmed_template,
         "has_booking_cancelled_template": has_booking_cancelled_template,
         "test_mode": bool(recipient_override),
@@ -116,25 +158,33 @@ def notification_status_payload() -> dict[str, Any]:
     }
 
 
-def send_whatsapp_template(*, to: str, template_name: str, body_parameters: list[str]) -> bool:
-    if not whatsapp_is_enabled():
+def send_whatsapp_template(
+    *,
+    to: str,
+    template_name: str,
+    body_parameters: list[str],
+    organization_settings: OrganizationSettings | None = None,
+) -> bool:
+    config = resolve_whatsapp_config(organization_settings)
+
+    if not config["enabled"]:
         logger.info("WhatsApp skip: provider disabled")
         return False
 
-    if not whatsapp_is_configured():
+    if not config["configured"]:
         logger.warning("WhatsApp skip: provider selected but not configured")
         return False
 
-    recipient = normalize_whatsapp_number(settings.WHATSAPP_RECIPIENT_OVERRIDE or to)
+    recipient = normalize_whatsapp_number(config["recipient_override"] or to)
     if not recipient:
         logger.warning("WhatsApp skip: recipient missing or invalid")
         return False
 
     try:
         response = requests.post(
-            f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages",
+            f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{config['phone_number_id']}/messages",
             headers={
-                "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+                "Authorization": f"Bearer {config['access_token']}",
                 "Content-Type": "application/json",
             },
             json={
@@ -143,7 +193,7 @@ def send_whatsapp_template(*, to: str, template_name: str, body_parameters: list
                 "type": "template",
                 "template": {
                     "name": template_name,
-                    "language": {"code": settings.WHATSAPP_TEMPLATE_LANGUAGE},
+                    "language": {"code": config["template_language"]},
                     "components": [
                         {
                             "type": "body",
