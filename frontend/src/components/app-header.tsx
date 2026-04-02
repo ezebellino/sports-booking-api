@@ -6,6 +6,7 @@ import { useAuth } from "../modules/auth/auth-context";
 export function AppHeader() {
   const { isAdmin, isAuthenticated, logout, user } = useAuth();
   const roleLabel = user?.role === "admin" ? "Administrador" : "Usuario";
+  const organizationLabel = user?.organization_name ?? "Complejo Demo";
 
   return (
     <header className="mb-6 flex flex-col gap-4 pt-2">
@@ -19,6 +20,9 @@ export function AppHeader() {
               Sports Booking
             </p>
             <h1 className="text-lg font-extrabold text-slate-950">Reservas deportivas</h1>
+            {isAuthenticated && user ? (
+              <p className="mt-0.5 text-xs font-medium text-slate-500">{organizationLabel}</p>
+            ) : null}
           </div>
         </Link>
 
@@ -54,6 +58,9 @@ export function AppHeader() {
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <p className="text-sm font-semibold text-slate-800">{user.full_name || user.email}</p>
+              <span className="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-700">
+                {organizationLabel}
+              </span>
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${
                   user.role === "admin"

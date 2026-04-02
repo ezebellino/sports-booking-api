@@ -8,9 +8,10 @@ import { api } from "../lib/api";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function HomePage() {
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, isAdmin, user } = useAuth();
   const sportsQuery = useQuery({ queryKey: ["sports"], queryFn: api.listSports });
   const venuesQuery = useQuery({ queryKey: ["venues"], queryFn: () => api.listVenues(null) });
+  const organizationLabel = user?.organization_name ?? "Complejo Demo";
 
   return (
     <>
@@ -30,6 +31,11 @@ export function HomePage() {
             luego cancha y por último el turno disponible. Si sos administrador, además tenés
             herramientas para generar y editar bloques completos de horarios.
           </p>
+          {isAuthenticated ? (
+            <div className="mt-4 inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
+              Complejo activo: {organizationLabel}
+            </div>
+          ) : null}
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Link className="btn-primary" to="/explore">
@@ -44,7 +50,7 @@ export function HomePage() {
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <MetricCard label="Deportes" value={String(sportsQuery.data?.length ?? 0)} icon={<ShieldCheck size={18} />} />
             <MetricCard label="Sedes" value={String(venuesQuery.data?.length ?? 0)} icon={<Map size={18} />} />
-            <MetricCard label="Admin" value={isAdmin ? "Activo" : "Usuario"} icon={<CalendarRange size={18} />} />
+            <MetricCard label="Perfil" value={isAdmin ? "Admin" : "Usuario"} icon={<CalendarRange size={18} />} />
           </div>
         </div>
 
@@ -71,6 +77,7 @@ export function HomePage() {
               <li>Entrar con tu cuenta y mantener la sesión activa.</li>
               <li>Explorar por sede, cancha y fecha con un flujo simple.</li>
               <li>Reservar turnos y revisar tu agenda personal con la hora local de cada sede.</li>
+              {isAuthenticated ? <li>Operar dentro del complejo activo sin mezclar datos de otras sedes o clientes.</li> : null}
               <li>{isAdmin ? "Administrar turnos masivos, edición y control por cancha." : "Ver el panel admin cuando tu rol tenga permisos."}</li>
             </ul>
           </div>

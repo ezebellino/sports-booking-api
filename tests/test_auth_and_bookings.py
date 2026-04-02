@@ -1,5 +1,6 @@
 ﻿from datetime import datetime, timedelta, timezone
 
+from app.core.security import get_password_hash
 from app.models.court import Court
 from app.models.organization import Organization
 from app.models.sport import Sport
@@ -117,6 +118,25 @@ def test_register_login_me_and_refresh_flow(client):
     assert refresh_response.status_code == 200
     assert refresh_response.json()["access_token"]
     assert refresh_response.json()["refresh_token"]
+
+
+def test_login_backfills_default_organization_for_legacy_user(client, db_session):
+    organization = get_default_organization(db_session)
+    legacy_user = User(
+        email="legacy@example.com",
+        full_name="Legacy User",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+        organization_id=None,
+    )
+    db_session.add(legacy_user)
+    db_session.commit()
+
+    login_response = client.post("/auth/login", data={"username": "legacy@example.com", "password": "password123"})
+    assert login_response.status_code == 200
+
+    db_session.refresh(legacy_user)
+    assert legacy_user.organization_id == organization.id
 
 
 def test_admin_route_requires_admin_role(client, db_session):

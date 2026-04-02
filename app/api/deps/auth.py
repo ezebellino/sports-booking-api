@@ -1,7 +1,7 @@
 ﻿from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.routes.auth import get_default_organization, oauth2_optional, oauth2_scheme
+from app.api.routes.auth import ensure_user_organization, get_default_organization, oauth2_optional, oauth2_scheme
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.organization import Organization
@@ -23,7 +23,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
-    return user
+    return ensure_user_organization(db, user)
 
 
 def get_optional_current_user(token: str | None = Depends(oauth2_optional), db: Session = Depends(get_db)) -> User | None:
@@ -37,7 +37,10 @@ def get_optional_current_user(token: str | None = Depends(oauth2_optional), db: 
     user_id = payload.get("sub")
     if not user_id:
         return None
-    return db.get(User, user_id)
+    user = db.get(User, user_id)
+    if not user:
+        return None
+    return ensure_user_organization(db, user)
 
 
 def get_current_organization(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Organization:

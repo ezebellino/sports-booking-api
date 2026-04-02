@@ -35,6 +35,18 @@ def get_default_organization(db: Session) -> Organization:
     return organization
 
 
+def ensure_user_organization(db: Session, user: User) -> User:
+    if user.organization_id:
+        return user
+
+    default_organization = get_default_organization(db)
+    user.organization_id = default_organization.id
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def serialize_user(user: User) -> UserPublic:
     return UserPublic(
         id=str(user.id),
@@ -59,7 +71,7 @@ def get_current_user_from_token(token: str, db: Session) -> User:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return user
+    return ensure_user_organization(db, user)
 
 
 @router.post("/register", response_model=UserPublic, status_code=201)
@@ -93,6 +105,7 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     user = db.query(User).filter(User.email == form.username).first()
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    user = ensure_user_organization(db, user)
 
     access = create_access_token(
         subject=str(user.id),
@@ -120,6 +133,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    user = ensure_user_organization(db, user)
 
     access = create_access_token(
         subject=str(user.id),
