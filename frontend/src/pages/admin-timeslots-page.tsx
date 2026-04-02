@@ -264,7 +264,7 @@ export function AdminTimeslotsPage() {
     const fallback = activePolicyQuery.data;
     return selectedBulkSports.map((sport) => ({
       sportId: sport.id,
-      label: `${sport.name}: reserva con ${sport.booking_min_lead_minutes ?? fallback?.min_booking_lead_minutes ?? 0} min y cancelaci?n con ${sport.cancellation_min_lead_minutes ?? fallback?.cancellation_min_lead_minutes ?? 0} min.`,
+      label: `${sport.name}: reserva con ${sport.booking_min_lead_minutes ?? fallback?.min_booking_lead_minutes ?? 0} min y cancelación con ${sport.cancellation_min_lead_minutes ?? fallback?.cancellation_min_lead_minutes ?? 0} min.`,
       usesDefault: sport.booking_min_lead_minutes === null && sport.cancellation_min_lead_minutes === null,
     }));
   }, [activePolicyQuery.data, selectedBulkSports]);
@@ -456,7 +456,7 @@ export function AdminTimeslotsPage() {
             <TimerReset className="mt-0.5 text-skyline" size={18} />
             <div>
               <p className="font-semibold text-slate-900">
-                {filterSportId ? `Pol?tica activa para ${activePolicyQuery.data.sport_name}` : "Pol?tica general del complejo"}
+                {filterSportId ? `Política activa para ${activePolicyQuery.data.sport_name}` : "Política general del complejo"}
               </p>
               <p className="mt-1">{activePolicyQuery.data.booking_message}</p>
               <p className="mt-1">{activePolicyQuery.data.cancellation_message}</p>
@@ -508,11 +508,11 @@ export function AdminTimeslotsPage() {
               </div>
               {bulkCourtIds.length ? (
                 <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  <p className="font-semibold text-slate-900">Reglas operativas para la selecci?n actual</p>
+                  <p className="font-semibold text-slate-900">Reglas operativas para la selección actual</p>
                   <div className="mt-2 space-y-1">
                     {bulkPolicyRows.map((policyRow) => (
                       <p key={policyRow.sportId}>
-                        {policyRow.label} {policyRow.usesDefault ? "Usa la pol?tica general." : "Tiene configuraci?n propia."}
+                        {policyRow.label} {policyRow.usesDefault ? "Usa la política general." : "Tiene configuración propia."}
                       </p>
                     ))}
                   </div>
@@ -792,3 +792,4 @@ export function AdminTimeslotsPage() {
     </>
   );
 }
+

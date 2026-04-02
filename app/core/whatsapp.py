@@ -36,13 +36,83 @@ def whatsapp_is_configured() -> bool:
 
 
 def notification_status_payload() -> dict[str, Any]:
+    has_access_token = bool(settings.WHATSAPP_ACCESS_TOKEN)
+    has_phone_number_id = bool(settings.WHATSAPP_PHONE_NUMBER_ID)
+    has_booking_confirmed_template = bool(settings.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED)
+    has_booking_cancelled_template = bool(settings.WHATSAPP_TEMPLATE_BOOKING_CANCELLED)
+    recipient_override = settings.WHATSAPP_RECIPIENT_OVERRIDE
+    enabled = whatsapp_is_enabled()
+    configured = whatsapp_is_configured()
+    ready_for_live_send = bool(
+        enabled
+        and configured
+        and has_booking_confirmed_template
+        and has_booking_cancelled_template
+    )
+
+    checks = [
+        {
+            "key": "provider",
+            "label": "Proveedor Meta Cloud activo",
+            "ok": enabled,
+            "detail": "Seleccioná WHATSAPP_PROVIDER=meta_cloud para habilitar el canal real.",
+            "severity": "required",
+        },
+        {
+            "key": "access_token",
+            "label": "Access token cargado",
+            "ok": has_access_token,
+            "detail": "Hace falta WHATSAPP_ACCESS_TOKEN para autenticar los envíos.",
+            "severity": "required",
+        },
+        {
+            "key": "phone_number_id",
+            "label": "Phone number ID configurado",
+            "ok": has_phone_number_id,
+            "detail": "Hace falta WHATSAPP_PHONE_NUMBER_ID para apuntar al número emisor.",
+            "severity": "required",
+        },
+        {
+            "key": "booking_confirmed_template",
+            "label": "Template de confirmación definido",
+            "ok": has_booking_confirmed_template,
+            "detail": "Cargá WHATSAPP_TEMPLATE_BOOKING_CONFIRMED con el nombre aprobado en Meta.",
+            "severity": "required",
+        },
+        {
+            "key": "booking_cancelled_template",
+            "label": "Template de cancelación definido",
+            "ok": has_booking_cancelled_template,
+            "detail": "Cargá WHATSAPP_TEMPLATE_BOOKING_CANCELLED con el nombre aprobado en Meta.",
+            "severity": "required",
+        },
+        {
+            "key": "recipient_override",
+            "label": "Número override para pruebas",
+            "ok": bool(recipient_override),
+            "detail": "Opcional. Úsalo para testear sin enviar al cliente final.",
+            "severity": "optional",
+        },
+    ]
+
+    missing_items = [check["label"] for check in checks if check["severity"] == "required" and not check["ok"]]
+
     return {
         "provider": settings.WHATSAPP_PROVIDER,
-        "enabled": whatsapp_is_enabled(),
-        "configured": whatsapp_is_configured(),
-        "has_access_token": bool(settings.WHATSAPP_ACCESS_TOKEN),
-        "has_phone_number_id": bool(settings.WHATSAPP_PHONE_NUMBER_ID),
-        "recipient_override": settings.WHATSAPP_RECIPIENT_OVERRIDE,
+        "enabled": enabled,
+        "configured": configured,
+        "ready_for_live_send": ready_for_live_send,
+        "has_access_token": has_access_token,
+        "has_phone_number_id": has_phone_number_id,
+        "recipient_override": recipient_override,
+        "template_language": settings.WHATSAPP_TEMPLATE_LANGUAGE,
+        "booking_confirmed_template": settings.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED,
+        "booking_cancelled_template": settings.WHATSAPP_TEMPLATE_BOOKING_CANCELLED,
+        "has_booking_confirmed_template": has_booking_confirmed_template,
+        "has_booking_cancelled_template": has_booking_cancelled_template,
+        "test_mode": bool(recipient_override),
+        "missing_items": missing_items,
+        "checks": checks,
     }
 
 
@@ -98,4 +168,3 @@ def send_whatsapp_template(*, to: str, template_name: str, body_parameters: list
         response.text,
     )
     return False
-

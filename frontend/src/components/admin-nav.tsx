@@ -1,8 +1,9 @@
-import { NavLink } from "react-router-dom";
+﻿import { NavLink } from "react-router-dom";
 
 const adminLinks = [
   { to: "/admin/inventory", label: "Sedes y canchas" },
   { to: "/admin/timeslots", label: "Turnos" },
+  { to: "/admin/whatsapp", label: "WhatsApp" },
 ];
 
 export function AdminNav() {

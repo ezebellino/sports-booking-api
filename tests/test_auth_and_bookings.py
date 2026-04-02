@@ -901,3 +901,8 @@ def test_admin_can_check_notification_status(client, db_session):
     payload = response.json()
     assert payload["provider"] in {"disabled", "meta_cloud"}
     assert "configured" in payload
+    assert "ready_for_live_send" in payload
+    assert isinstance(payload["checks"], list)
+    assert any(check["key"] == "booking_confirmed_template" for check in payload["checks"])
+    assert isinstance(payload["missing_items"], list)
+

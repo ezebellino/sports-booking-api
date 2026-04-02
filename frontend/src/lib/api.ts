@@ -54,9 +54,24 @@ export type NotificationStatus = {
   provider: string;
   enabled: boolean;
   configured: boolean;
+  ready_for_live_send: boolean;
   has_access_token: boolean;
   has_phone_number_id: boolean;
   recipient_override: string | null;
+  template_language: string;
+  booking_confirmed_template: string | null;
+  booking_cancelled_template: string | null;
+  has_booking_confirmed_template: boolean;
+  has_booking_cancelled_template: boolean;
+  test_mode: boolean;
+  missing_items: string[];
+  checks: Array<{
+    key: string;
+    label: string;
+    ok: boolean;
+    detail: string;
+    severity: "required" | "optional";
+  }>;
 };
 
 export type BookingPolicy = {

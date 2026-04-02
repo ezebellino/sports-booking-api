@@ -1,8 +1,9 @@
-﻿import { Building2, CalendarDays, Compass, House, LogIn, Shield, Ticket } from "lucide-react";
+﻿import { Building2, CalendarDays, Compass, House, LogIn, Ticket } from "lucide-react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./modules/auth/auth-context";
 import { AdminInventoryPage } from "./pages/admin-inventory-page";
 import { AdminTimeslotsPage } from "./pages/admin-timeslots-page";
+import { AdminWhatsappPage } from "./pages/admin-whatsapp-page";
 import { ExplorePage } from "./pages/explore-page";
 import { HomePage } from "./pages/home-page";
 import { LoginPage } from "./pages/login-page";
@@ -85,6 +86,14 @@ function AppShell() {
             element={
               <AdminRoute>
                 <AdminTimeslotsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/whatsapp"
+            element={
+              <AdminRoute>
+                <AdminWhatsappPage />
               </AdminRoute>
             }
           />
