@@ -19,6 +19,7 @@ import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api, type Court, type Venue } from "../lib/api";
+import { confirmDestructiveAction } from "../lib/dialog";
 
 const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";
 
@@ -334,8 +335,12 @@ export function AdminInventoryPage() {
     });
   }
 
-  function handleDeleteVenue(venue: Venue) {
-    const confirmed = window.confirm(`¿Eliminar la sede ${venue.name}?`);
+  async function handleDeleteVenue(venue: Venue) {
+    const confirmed = await confirmDestructiveAction({
+      title: "Eliminar sede",
+      text: `Vas a eliminar ${venue.name}. Esta acción no se puede deshacer.`,
+      confirmText: "Sí, eliminar",
+    });
     if (!confirmed) {
       return;
     }
@@ -344,8 +349,12 @@ export function AdminInventoryPage() {
     deleteVenueMutation.mutate(venue.id);
   }
 
-  function handleDeleteCourt(court: Court) {
-    const confirmed = window.confirm(`¿Eliminar la cancha ${court.name}?`);
+  async function handleDeleteCourt(court: Court) {
+    const confirmed = await confirmDestructiveAction({
+      title: "Eliminar cancha",
+      text: `Vas a eliminar ${court.name}. Esta acción no se puede deshacer.`,
+      confirmText: "Sí, eliminar",
+    });
     if (!confirmed) {
       return;
     }

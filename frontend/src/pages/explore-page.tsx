@@ -78,6 +78,10 @@ export function ExplorePage() {
   const selectedSport = selectedSportId ? sportsById.get(selectedSportId) ?? null : null;
   const selectedVenue = selectedVenueId ? venuesById.get(selectedVenueId) ?? null : null;
   const selectedCourt = selectedCourtId ? courtsById.get(selectedCourtId) ?? null : null;
+  const visibleTimeslots = useMemo(
+    () => (timeslotsQuery.data ?? []).filter((slot) => slot.availability_status !== "expired"),
+    [timeslotsQuery.data],
+  );
 
   useEffect(() => {
     setFeedback(null);
@@ -291,9 +295,9 @@ export function ExplorePage() {
                 />
               ) : timeslotsQuery.isLoading ? (
                 <LoadingCard label="Buscando turnos..." />
-              ) : timeslotsQuery.data?.length ? (
+              ) : visibleTimeslots.length ? (
                 <div className="mt-4 space-y-3">
-                  {timeslotsQuery.data.map((slot) => {
+                  {visibleTimeslots.map((slot) => {
                     const court = courtsById.get(slot.court_id);
                     const sport = court ? sportsById.get(court.sport_id) : null;
                     const venue = court ? venuesById.get(court.venue_id) : null;
@@ -358,8 +362,8 @@ export function ExplorePage() {
                 </div>
               ) : (
                 <EmptyState
-                  title="Sin turnos para esa fecha"
-                  description="Probá con otra fecha o cargá más turnos desde el panel admin."
+                  title="Sin turnos disponibles para esa fecha"
+                  description="Los turnos vencidos ya no se muestran en esta búsqueda. Probá con otra fecha o cargá más turnos desde el panel admin."
                 />
               )}
             </section>
