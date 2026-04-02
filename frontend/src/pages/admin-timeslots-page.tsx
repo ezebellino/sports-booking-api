@@ -78,6 +78,11 @@ export function AdminTimeslotsPage() {
     queryFn: api.listSports,
   });
 
+  const activePolicyQuery = useQuery({
+    queryKey: ["booking-policies", filterSportId || "general"],
+    queryFn: () => api.listBookingPolicies(filterSportId || null),
+  });
+
   const venuesQuery = useQuery({
     queryKey: ["venues", "timeslots-admin"],
     queryFn: () => api.listVenues(null),
@@ -242,6 +247,27 @@ export function AdminTimeslotsPage() {
   }, [bulkCourtIds, courtsById, venuesById]);
 
   const previewTimeZone = selectedBulkTimezones.length === 1 ? selectedBulkTimezones[0] : null;
+
+  const selectedBulkSports = useMemo(() => {
+    return Array.from(
+      new Map(
+        bulkCourtIds
+          .map((courtId) => courtsById.get(courtId))
+          .map((court) => (court ? sportsById.get(court.sport_id) ?? null : null))
+          .filter((sport): sport is NonNullable<typeof sport> => Boolean(sport))
+          .map((sport) => [sport.id, sport]),
+      ).values(),
+    );
+  }, [bulkCourtIds, courtsById, sportsById]);
+
+  const bulkPolicyRows = useMemo(() => {
+    const fallback = activePolicyQuery.data;
+    return selectedBulkSports.map((sport) => ({
+      sportId: sport.id,
+      label: `${sport.name}: reserva con ${sport.booking_min_lead_minutes ?? fallback?.min_booking_lead_minutes ?? 0} min y cancelaci?n con ${sport.cancellation_min_lead_minutes ?? fallback?.cancellation_min_lead_minutes ?? 0} min.`,
+      usesDefault: sport.booking_min_lead_minutes === null && sport.cancellation_min_lead_minutes === null,
+    }));
+  }, [activePolicyQuery.data, selectedBulkSports]);
 
   const visibleTimeslots = useMemo(() => {
     const allowedCourtIds = new Set(filteredCourts.map((court) => court.id));
@@ -425,6 +451,20 @@ export function AdminTimeslotsPage() {
           </div>
         </div>
 
+        {activePolicyQuery.data ? (
+          <div className="shell-card flex items-start gap-3 p-4 text-sm text-slate-600">
+            <TimerReset className="mt-0.5 text-skyline" size={18} />
+            <div>
+              <p className="font-semibold text-slate-900">
+                {filterSportId ? `Pol?tica activa para ${activePolicyQuery.data.sport_name}` : "Pol?tica general del complejo"}
+              </p>
+              <p className="mt-1">{activePolicyQuery.data.booking_message}</p>
+              <p className="mt-1">{activePolicyQuery.data.cancellation_message}</p>
+              <p className="mt-2 text-xs font-medium text-slate-400">{activePolicyQuery.data.admin_summary}</p>
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
           <form className="shell-card space-y-4 p-5" onSubmit={handleBulkSubmit}>
             <div className="flex items-center gap-3">
@@ -466,6 +506,18 @@ export function AdminTimeslotsPage() {
                   </label>
                 ))}
               </div>
+              {bulkCourtIds.length ? (
+                <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <p className="font-semibold text-slate-900">Reglas operativas para la selecci?n actual</p>
+                  <div className="mt-2 space-y-1">
+                    {bulkPolicyRows.map((policyRow) => (
+                      <p key={policyRow.sportId}>
+                        {policyRow.label} {policyRow.usesDefault ? "Usa la pol?tica general." : "Tiene configuraci?n propia."}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -678,6 +730,9 @@ export function AdminTimeslotsPage() {
                           <p className="mt-1 text-xs font-medium text-slate-400">
                             {venue ? `Hora local de ${venue.name}: ${timeZoneSummary(venue.timezone)}` : "Zona horaria pendiente"}
                           </p>
+                          {timeslot.policy_summary ? (
+                            <p className="mt-1 text-xs font-medium text-slate-400">{timeslot.policy_summary}</p>
+                          ) : null}
                         </div>
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                           <TimerReset size={16} />
