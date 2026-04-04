@@ -1997,6 +1997,168 @@ def test_staff_invitation_flow_creates_user_in_same_organization(client, db_sess
     assert invitation.status == "accepted"
     assert invitation.accepted_at is not None
 
+    pending_after_accept_response = client.get(
+        "/organizations/current/staff-invitations",
+        headers=auth_headers(admin_token),
+    )
+    assert pending_after_accept_response.status_code == 200
+    assert pending_after_accept_response.json() == []
+
+
+def test_accepting_staff_invitation_cleans_other_pending_invites_for_same_email(client, db_session):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Staff Cleanup",
+            "admin_full_name": "Cleanup Admin",
+            "admin_email": "cleanup-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    first_invite_response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+            "email": "cleanup-staff@saas.com",
+            "full_name": "Cleanup Staff",
+            "role": "staff",
+            "expires_in_days": 7,
+        },
+        headers=auth_headers(admin_token),
+    )
+    second_invite_response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+            "email": "cleanup-staff@saas.com",
+            "full_name": "Cleanup Staff",
+            "role": "staff",
+            "expires_in_days": 14,
+        },
+        headers=auth_headers(admin_token),
+    )
+
+    assert first_invite_response.status_code == 201
+    assert second_invite_response.status_code == 201
+
+    accept_response = client.post(
+        "/organizations/staff-invitations/accept",
+        json={
+            "token": second_invite_response.json()["invite_token"],
+            "full_name": "Cleanup Staff",
+            "password": "password123",
+        },
+    )
+
+    assert accept_response.status_code == 200
+
+    remaining_pending = (
+        db_session.query(StaffInvitation)
+        .filter(
+            StaffInvitation.email == "cleanup-staff@saas.com",
+            StaffInvitation.status == "pending",
+        )
+        .count()
+    )
+    assert remaining_pending == 0
+
+
+def test_create_staff_invitation_reports_email_sent(client, monkeypatch):
+    onboard = onboard_organization(
+        client,
+        organization_name="Complejo Mail",
+        admin_email="mail-admin@saas.com",
+    )
+    admin_token = onboard["access_token"]
+
+    monkeypatch.setattr(
+        "app.api.routes.organizations.send_staff_invitation_email",
+        lambda **kwargs: ("sent", "Invitación enviada por email correctamente."),
+    )
+
+    response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+          "email": "staff-mail@saas.com",
+          "full_name": "Staff Mail",
+          "role": "staff",
+          "expires_in_days": 7,
+        },
+        headers=auth_headers(admin_token),
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["email_delivery_status"] == "sent"
+    assert payload["invite_url"].endswith(payload["invite_token"])
+
+
+def test_create_staff_invitation_falls_back_to_manual_link_when_email_not_configured(client, monkeypatch):
+    onboard = onboard_organization(
+        client,
+        organization_name="Complejo Manual",
+        admin_email="manual-admin@saas.com",
+    )
+    admin_token = onboard["access_token"]
+
+    monkeypatch.setattr(
+        "app.api.routes.organizations.send_staff_invitation_email",
+        lambda **kwargs: ("manual_required", "El correo automático no está configurado. Compartí el link manualmente."),
+    )
+
+    response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+          "email": "staff-manual@saas.com",
+          "full_name": "Staff Manual",
+          "role": "staff",
+          "expires_in_days": 7,
+        },
+        headers=auth_headers(admin_token),
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["email_delivery_status"] == "manual_required"
+
+
+def test_admin_can_cancel_pending_staff_invitation(client, db_session):
+    onboard = onboard_organization(
+        client,
+        organization_name="Complejo Cancel Invite",
+        admin_email="cancel-admin@saas.com",
+    )
+    admin_token = onboard["access_token"]
+
+    create_response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+            "email": "cancel-staff@saas.com",
+            "full_name": "Cancel Staff",
+            "role": "staff",
+            "expires_in_days": 7,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert create_response.status_code == 201
+    invitation_id = create_response.json()["id"]
+
+    cancel_response = client.delete(
+        f"/organizations/current/staff-invitations/{invitation_id}",
+        headers=auth_headers(admin_token),
+    )
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "cancelled"
+
+    pending_list_response = client.get(
+        "/organizations/current/staff-invitations",
+        headers=auth_headers(admin_token),
+    )
+    assert pending_list_response.status_code == 200
+    assert pending_list_response.json() == []
+
 
 def test_booking_policies_use_organization_defaults_when_sport_has_no_override(client):
     onboard_response = client.post(
@@ -2172,4 +2334,40 @@ def test_admin_can_create_global_sport_and_enable_it_for_current_organization(cl
     public_response = client.get("/sports", headers=auth_headers(admin_token))
     assert public_response.status_code == 200
     assert any(item["name"] == "Pilates" for item in public_response.json())
+
+
+def test_admin_can_upload_organization_logo(client, monkeypatch, tmp_path):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MEDIA_ROOT", str(tmp_path / "uploads"))
+
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Logo",
+            "admin_full_name": "Logo Admin",
+            "admin_email": "logo-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+    organization_id = onboard_response.json()["organization"]["id"]
+
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc`\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    response = client.post(
+        "/organizations/current/logo",
+        headers=auth_headers(admin_token),
+        files={"file": ("logo.png", png_bytes, "image/png")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["logo_url"].startswith(f"/media/organization-logos/{organization_id}/")
+    relative_path = payload["logo_url"].removeprefix("/media/")
+    assert (tmp_path / "uploads" / relative_path).exists()
 

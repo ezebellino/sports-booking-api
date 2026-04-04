@@ -3,11 +3,13 @@ import secrets
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import get_request_organization, require_admin
 from app.api.routes.auth import ensure_user_organization
+from app.core.email import build_staff_invitation_link, send_staff_invitation_email
+from app.core.logo_storage import delete_managed_logo, save_uploaded_logo
 from app.core.organization_settings import get_or_create_organization_settings
 from app.core.security import create_access_token, create_refresh_token, get_password_hash
 from app.core.whatsapp import normalize_whatsapp_number
@@ -29,6 +31,7 @@ from app.schemas.organization import (
     StaffInvitationAccept,
     StaffInvitationAcceptancePublic,
     StaffInvitationCreate,
+    StaffInvitationCreatePublic,
     StaffInvitationPublic,
 )
 from app.schemas.sport import OrganizationSportPublic, SportPublic
@@ -41,6 +44,7 @@ ORGANIZATION_SLUG_EXISTS_DETAIL = "Ya existe un complejo con ese identificador"
 EMAIL_EXISTS_DETAIL = "Email ya registrado"
 INVITATION_NOT_FOUND_DETAIL = "Invitación no encontrada o vencida"
 INVITATION_ALREADY_USED_DETAIL = "La invitación ya fue utilizada"
+INVITATION_CANNOT_BE_CANCELLED_DETAIL = "Solo se pueden cancelar invitaciones pendientes"
 
 
 def slugify_organization_name(value: str) -> str:
@@ -307,22 +311,48 @@ def update_current_organization_settings(
     return serialize_settings(settings)
 
 
+@router.post("/current/logo", response_model=OrganizationSettingsPublic)
+async def upload_current_organization_logo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+
+    settings = get_or_create_organization_settings(db, organization)
+    previous_logo_url = settings.logo_url
+    settings.logo_url = await save_uploaded_logo(file, organization.id)
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    delete_managed_logo(previous_logo_url)
+    return serialize_settings(settings)
+
+
 @router.get("/current/staff-invitations", response_model=list[StaffInvitationPublic])
 def list_staff_invitations(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_admin),
 ):
     current_admin = ensure_user_organization(db, current_admin)
+    now = datetime.now(timezone.utc)
     invitations = (
         db.query(StaffInvitation)
-        .filter(StaffInvitation.organization_id == current_admin.organization_id)
+        .filter(
+            StaffInvitation.organization_id == current_admin.organization_id,
+            StaffInvitation.status == "pending",
+            StaffInvitation.expires_at > now,
+        )
         .order_by(StaffInvitation.created_at.desc())
         .all()
     )
     return invitations
 
 
-@router.post("/current/staff-invitations", response_model=StaffInvitationPublic, status_code=201)
+@router.post("/current/staff-invitations", response_model=StaffInvitationCreatePublic, status_code=201)
 def create_staff_invitation(
     payload: StaffInvitationCreate,
     db: Session = Depends(get_db),
@@ -342,6 +372,55 @@ def create_staff_invitation(
         status="pending",
         expires_at=datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days),
     )
+    db.add(invitation)
+    db.commit()
+    db.refresh(invitation)
+    organization = db.get(Organization, current_admin.organization_id)
+    delivery_status, delivery_detail = send_staff_invitation_email(
+        recipient_email=invitation.email,
+        recipient_name=invitation.full_name,
+        organization_name=organization.name if organization else "tu complejo",
+        inviter_name=current_admin.full_name or current_admin.email,
+        role=invitation.role,
+        invite_token=invitation.invite_token,
+    )
+    return StaffInvitationCreatePublic(
+        id=invitation.id,
+        organization_id=invitation.organization_id,
+        email=invitation.email,
+        full_name=invitation.full_name,
+        role=invitation.role,
+        status=invitation.status,
+        invite_token=invitation.invite_token,
+        expires_at=invitation.expires_at,
+        accepted_at=invitation.accepted_at,
+        invite_url=build_staff_invitation_link(invitation.invite_token),
+        email_delivery_status=delivery_status,
+        email_delivery_detail=delivery_detail,
+    )
+
+
+@router.delete("/current/staff-invitations/{invitation_id}", response_model=StaffInvitationPublic)
+def cancel_staff_invitation(
+    invitation_id: str,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    invitation = (
+        db.query(StaffInvitation)
+        .filter(
+            StaffInvitation.id == invitation_id,
+            StaffInvitation.organization_id == current_admin.organization_id,
+        )
+        .first()
+    )
+    if not invitation:
+        raise HTTPException(status_code=404, detail=INVITATION_NOT_FOUND_DETAIL)
+    if invitation.status != "pending":
+        raise HTTPException(status_code=409, detail=INVITATION_CANNOT_BE_CANCELLED_DETAIL)
+
+    invitation.status = "cancelled"
     db.add(invitation)
     db.commit()
     db.refresh(invitation)
@@ -380,6 +459,16 @@ def accept_staff_invitation(payload: StaffInvitationAccept, db: Session = Depend
     invitation.status = "accepted"
     invitation.accepted_at = datetime.now(timezone.utc)
     db.add(invitation)
+    (
+        db.query(StaffInvitation)
+        .filter(
+            StaffInvitation.organization_id == invitation.organization_id,
+            StaffInvitation.email == invitation.email,
+            StaffInvitation.status == "pending",
+            StaffInvitation.id != invitation.id,
+        )
+        .delete(synchronize_session=False)
+    )
     db.commit()
     db.refresh(user)
     db.refresh(invitation)

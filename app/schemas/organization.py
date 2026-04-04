@@ -205,6 +205,12 @@ class StaffInvitationPublic(BaseModel):
     accepted_at: datetime | None = None
 
 
+class StaffInvitationCreatePublic(StaffInvitationPublic):
+    invite_url: str
+    email_delivery_status: str
+    email_delivery_detail: str
+
+
 class StaffInvitationAcceptancePublic(BaseModel):
     organization: OrganizationPublic
     user_id: UUID

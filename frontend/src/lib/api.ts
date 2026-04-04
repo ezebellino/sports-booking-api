@@ -56,6 +56,12 @@ export type StaffInvitation = {
   accepted_at: string | null;
 };
 
+export type StaffInvitationCreateResult = StaffInvitation & {
+  invite_url: string;
+  email_delivery_status: "sent" | "failed" | "manual_required";
+  email_delivery_detail: string;
+};
+
 export type Sport = {
   id: string;
   name: string;
@@ -402,6 +408,16 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  uploadCurrentOrganizationLogo: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<OrganizationSettings>("/organizations/current/logo", {
+      method: "POST",
+      auth: true,
+      body: formData,
+    });
+  },
+
   listStaffInvitations: () =>
     request<StaffInvitation[]>("/organizations/current/staff-invitations", { auth: true }),
 
@@ -411,11 +427,17 @@ export const api = {
     role: "admin" | "staff" | "user";
     expires_in_days?: number;
   }) =>
-    request<StaffInvitation>("/organizations/current/staff-invitations", {
+    request<StaffInvitationCreateResult>("/organizations/current/staff-invitations", {
       method: "POST",
       auth: true,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
+    }),
+
+  cancelStaffInvitation: (invitationId: string) =>
+    request<StaffInvitation>(`/organizations/current/staff-invitations/${invitationId}`, {
+      method: "DELETE",
+      auth: true,
     }),
 
   acceptStaffInvitation: (input: {

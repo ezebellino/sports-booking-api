@@ -2,13 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
   CircleAlert,
+  ImageUp,
   LoaderCircle,
   Palette,
   PlusCircle,
   Save,
   TimerReset,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { AdminNav } from "../components/admin-nav";
 import { AppHeader } from "../components/app-header";
 import { LoadingCard } from "../components/loading-card";
@@ -57,6 +58,8 @@ export function AdminOrganizationPage() {
   const [cancellationMinutes, setCancellationMinutes] = useState("");
   const [enabledSportIds, setEnabledSportIds] = useState<string[]>([]);
   const [sportForm, setSportForm] = useState<SportFormState>(emptySportForm);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +90,14 @@ export function AdminOrganizationPage() {
         : "",
     );
   }, [settingsQuery.data]);
+
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrl) {
+        URL.revokeObjectURL(logoPreviewUrl);
+      }
+    };
+  }, [logoPreviewUrl]);
 
   useEffect(() => {
     if (!organizationSportsQuery.data) {
@@ -219,6 +230,26 @@ export function AdminOrganizationPage() {
     },
   });
 
+  const uploadLogoMutation = useMutation({
+    mutationFn: api.uploadCurrentOrganizationLogo,
+    onSuccess: (settings) => {
+      if (logoPreviewUrl) {
+        URL.revokeObjectURL(logoPreviewUrl);
+      }
+      setLogoFile(null);
+      setLogoPreviewUrl(null);
+      setLogoUrl(settings.logo_url ?? "");
+      setError(null);
+      setSuccess("Logo actualizado correctamente.");
+      void queryClient.invalidateQueries({ queryKey: ["current-organization-settings"] });
+      void queryClient.invalidateQueries({ queryKey: ["request-organization-context"] });
+    },
+    onError: (mutationError) => {
+      setSuccess(null);
+      setError(mutationError instanceof Error ? mutationError.message : "No pudimos subir el logo.");
+    },
+  });
+
   function handleOrganizationSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -290,6 +321,38 @@ export function AdminOrganizationPage() {
   function updateSportForm<K extends keyof SportFormState>(key: K, value: SportFormState[K]) {
     setSportForm((current) => ({ ...current, [key]: value }));
   }
+
+  function handleLogoSelected(event: ChangeEvent<HTMLInputElement>) {
+    const nextFile = event.target.files?.[0] ?? null;
+    if (logoPreviewUrl) {
+      URL.revokeObjectURL(logoPreviewUrl);
+    }
+
+    if (!nextFile) {
+      setLogoFile(null);
+      setLogoPreviewUrl(null);
+      return;
+    }
+
+    setLogoFile(nextFile);
+    setLogoPreviewUrl(URL.createObjectURL(nextFile));
+    setError(null);
+    setSuccess(null);
+  }
+
+  function handleLogoUpload() {
+    if (!logoFile) {
+      setError("Seleccioná un archivo antes de subir el logo.");
+      setSuccess(null);
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    uploadLogoMutation.mutate(logoFile);
+  }
+
+  const effectiveLogoPreview = logoPreviewUrl || logoUrl || null;
 
   if (organizationQuery.isLoading || settingsQuery.isLoading || organizationSportsQuery.isLoading) {
     return (
@@ -376,6 +439,71 @@ export function AdminOrganizationPage() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4" data-tour="org-logo-upload">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
+                    <ImageUp size={18} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-slate-900">Logo del complejo</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      La forma recomendada es subir un archivo. El campo URL queda disponible como opción avanzada.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-center">
+                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-3xl border border-slate-200 bg-white">
+                    {effectiveLogoPreview ? (
+                      <img
+                        src={effectiveLogoPreview}
+                        alt="Preview del logo del complejo"
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <span className="px-3 text-center text-xs font-semibold text-slate-400">Sin logo</span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-3">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={handleLogoSelected}
+                      className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-2xl file:border-0 file:bg-slate-900 file:px-4 file:py-3 file:text-sm file:font-semibold file:text-white"
+                    />
+                    <p className="text-xs text-slate-500">
+                      Formatos permitidos: PNG, JPG, WEBP o SVG. Tamaño máximo: 2 MB.
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        disabled={!logoFile || uploadLogoMutation.isPending}
+                        onClick={handleLogoUpload}
+                      >
+                        {uploadLogoMutation.isPending ? (
+                          <span className="inline-flex items-center gap-2">
+                            <LoaderCircle className="animate-spin" size={16} />
+                            Subiendo...
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-2">
+                            <ImageUp size={16} />
+                            Subir logo
+                          </span>
+                        )}
+                      </button>
+                      {logoFile ? (
+                        <span className="self-center text-xs text-slate-500">
+                          Archivo listo: {logoFile.name}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="sm:col-span-2">
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Nombre de marca visible</label>
                 <input
@@ -394,6 +522,9 @@ export function AdminOrganizationPage() {
                   onChange={(event) => setLogoUrl(event.target.value)}
                   placeholder="https://..."
                 />
+                <p className="mt-2 text-xs text-slate-500">
+                  Usalo solo si preferís cargar una imagen remota manualmente.
+                </p>
               </div>
 
               <div>

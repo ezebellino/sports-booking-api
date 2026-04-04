@@ -13,6 +13,7 @@ export function AppHeader() {
   });
   const roleLabel =
     user?.role === "admin" ? "Administrador" : user?.role === "staff" ? "Staff" : "Usuario";
+  const adminNavLabel = user?.role === "staff" ? "Staff" : "Admin";
   const publicBrandLabel =
     contextQuery.data?.branding_name || contextQuery.data?.organization.name || "Complejo Demo";
   const organizationLabel = user?.organization_name ?? publicBrandLabel;
@@ -40,7 +41,7 @@ export function AppHeader() {
           </DesktopNavLink>
           {canAccessAdmin ? (
             <DesktopNavLink to="/admin/inventory" icon={<Shield size={16} />} tourId="nav-admin">
-              Admin
+              {adminNavLabel}
             </DesktopNavLink>
           ) : null}
           {isAuthenticated ? (

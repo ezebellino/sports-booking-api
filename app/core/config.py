@@ -19,6 +19,19 @@ class Settings(BaseSettings):
     WHATSAPP_TEMPLATE_BOOKING_CONFIRMED: str = "booking_confirmation"
     WHATSAPP_TEMPLATE_BOOKING_CANCELLED: str = "booking_cancellation"
     WHATSAPP_RECIPIENT_OVERRIDE: str | None = None
+    MEDIA_ROOT: str = "uploads"
+    MEDIA_URL_PREFIX: str = "/media"
+    ORGANIZATION_LOGO_DIR: str = "organization-logos"
+    MAX_LOGO_UPLOAD_BYTES: int = 2 * 1024 * 1024
+    FRONTEND_PUBLIC_URL: str = "http://localhost:5173"
+    EMAIL_PROVIDER: str = "disabled"
+    EMAIL_FROM: str | None = None
+    EMAIL_FROM_NAME: str = "Sports Booking"
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_USE_TLS: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
