@@ -25,7 +25,6 @@ Cerrar el paso de "app multi-tenant funcional" a "SaaS operable y listo para cre
 - Herramientas admin para inventario, turnos, políticas, WhatsApp y métricas.
 
 ### A revisar o terminar
-- Aislamiento total en todas las queries y scripts.
 - Decisión final sobre catálogo de deportes.
 - Resolución pública del tenant en la experiencia web.
 - Branding aplicado visualmente en toda la experiencia.
@@ -35,30 +34,15 @@ Cerrar el paso de "app multi-tenant funcional" a "SaaS operable y listo para cre
 ## Phase S1: Tenant Isolation Audit
 Objetivo: confirmar que no quede ninguna fuga de datos entre complejos.
 
-### Task S1.1
-Revisar rutas backend y scripts auxiliares.
+Estado: `closed`
 
-Checklist:
-- `sports`
-- `auth`
-- `bookings`
-- `venues`
-- `courts`
-- `timeslots`
-- `admin`
-- scripts de reseteo, seeds y utilidades
+Referencia:
+- [TENANT_ISOLATION_AUDIT.md](c:/ProjectsZeqe/sports-booking/TENANT_ISOLATION_AUDIT.md)
 
-### Task S1.2
-Agregar tests cruzados entre tenants.
-
-Casos mínimos:
-- admin de tenant A no puede leer ni modificar tenant B
-- staff de tenant A no puede operar tenant B
-- user de tenant A no puede reservar turnos de tenant B
-
-### Definition of Done
-- No quedan endpoints operativos sin filtro tenant-aware.
-- Los tests cubren aislamiento cruzado en flujos críticos.
+### Cierre
+- Rutas operativas críticas auditadas.
+- Tests cruzados entre tenants agregados.
+- Las excepciones actuales quedaron clasificadas como decisiones de producto (`sports` global y tenant público por resolver), no como fugas.
 
 ## Phase S2: Sports Strategy
 Objetivo: definir si los deportes son globales o por complejo.
@@ -162,12 +146,11 @@ Auditoría básica de acciones admin.
 - Un complejo puede darse de alta, configurarse y salir a producción con proceso claro.
 
 ## Recommended Order
-1. S1 Tenant Isolation Audit
-2. S2 Sports Strategy
-3. S3 Public Tenant Resolution
-4. S4 Real Branding
-5. S5 Staff Permissions
-6. S6 SaaS Operations
+1. S2 Sports Strategy
+2. S3 Public Tenant Resolution
+3. S4 Real Branding
+4. S5 Staff Permissions
+5. S6 SaaS Operations
 
 ## About Existing Plans
 

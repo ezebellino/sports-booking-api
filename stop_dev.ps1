@@ -4,4 +4,4 @@ Set-Location "C:\ProjectsZeqe\sports-booking"
 docker compose down
 
 Write-Host "Entorno detenido"
-& .\.venv\Scripts\deactivate
+& .\.venv313\Scripts\deactivate

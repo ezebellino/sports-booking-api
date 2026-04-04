@@ -36,6 +36,29 @@ def register_and_login(client, email: str, password: str, full_name: str = "Test
     return login_response.json()["access_token"]
 
 
+def onboard_organization(
+    client,
+    *,
+    organization_name: str,
+    admin_email: str,
+    admin_full_name: str = "Owner Admin",
+    organization_slug: str | None = None,
+    admin_password: str = "password123",
+):
+    payload = {
+        "organization_name": organization_name,
+        "admin_full_name": admin_full_name,
+        "admin_email": admin_email,
+        "admin_password": admin_password,
+    }
+    if organization_slug:
+        payload["organization_slug"] = organization_slug
+
+    response = client.post("/organizations/onboard", json=payload)
+    assert response.status_code == 201
+    return response.json()
+
+
 def get_default_organization(db_session) -> Organization:
     organization = db_session.query(Organization).filter(Organization.slug == "complejo-demo").first()
     if organization:
@@ -1169,6 +1192,263 @@ def test_public_venue_listing_uses_default_organization_scope(client, db_session
     names = [venue["name"] for venue in response.json()]
     assert "Sede Demo" in names
     assert "Sede Sur" not in names
+
+
+def test_admin_cannot_manage_other_tenant_operational_resources(client, db_session):
+    sport = Sport(name="Hockey", description="Aislamiento admin")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    tenant_a = onboard_organization(
+        client,
+        organization_name="Complejo Admin A",
+        organization_slug="complejo-admin-a",
+        admin_email="admin-a@saas.com",
+    )
+    tenant_b = onboard_organization(
+        client,
+        organization_name="Complejo Admin B",
+        organization_slug="complejo-admin-b",
+        admin_email="admin-b@saas.com",
+    )
+
+    admin_a_token = tenant_a["access_token"]
+    admin_b_token = tenant_b["access_token"]
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede B",
+            "address": "Calle Tenant B 100",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(admin_b_token),
+    )
+    assert venue_response.status_code == 201
+    venue_id = venue_response.json()["id"]
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": venue_id,
+            "sport_id": str(sport.id),
+            "name": "Cancha B1",
+            "indoor": True,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_b_token),
+    )
+    assert court_response.status_code == 201
+    court_id = court_response.json()["id"]
+
+    timeslot_response = client.post(
+        "/timeslots",
+        json={
+            "court_id": court_id,
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=4)).isoformat(),
+            "ends_at": (datetime.now(timezone.utc) + timedelta(days=4, hours=1)).isoformat(),
+            "capacity": 4,
+            "price": 18000,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_b_token),
+    )
+    assert timeslot_response.status_code == 201
+    timeslot_id = timeslot_response.json()["id"]
+
+    visible_venues_response = client.get("/venues", headers=auth_headers(admin_a_token))
+    assert visible_venues_response.status_code == 200
+    assert visible_venues_response.json() == []
+
+    update_venue_response = client.patch(
+        f"/venues/{venue_id}",
+        json={"name": "No debería verse"},
+        headers=auth_headers(admin_a_token),
+    )
+    assert update_venue_response.status_code == 404
+
+    update_court_response = client.patch(
+        f"/courts/{court_id}",
+        json={"name": "No debería verse"},
+        headers=auth_headers(admin_a_token),
+    )
+    assert update_court_response.status_code == 404
+
+    update_timeslot_response = client.patch(
+        f"/timeslots/{timeslot_id}",
+        json={"capacity": 6},
+        headers=auth_headers(admin_a_token),
+    )
+    assert update_timeslot_response.status_code == 404
+
+
+def test_staff_cannot_operate_other_tenant_courts(client, db_session):
+    sport = Sport(name="Squash", description="Aislamiento staff")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    owner_ops = onboard_organization(
+        client,
+        organization_name="Complejo Staff A",
+        organization_slug="complejo-staff-a",
+        admin_email="owner-staff-a@saas.com",
+    )
+    owner_other = onboard_organization(
+        client,
+        organization_name="Complejo Staff B",
+        organization_slug="complejo-staff-b",
+        admin_email="owner-staff-b@saas.com",
+    )
+
+    invite_response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+            "email": "staff-a@saas.com",
+            "full_name": "Staff A",
+            "role": "staff",
+            "expires_in_days": 7,
+        },
+        headers=auth_headers(owner_ops["access_token"]),
+    )
+    assert invite_response.status_code == 201
+
+    accept_response = client.post(
+        "/organizations/staff-invitations/accept",
+        json={
+            "token": invite_response.json()["invite_token"],
+            "full_name": "Staff A",
+            "password": "password123",
+        },
+    )
+    assert accept_response.status_code == 200
+    staff_token = accept_response.json()["access_token"]
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede B",
+            "address": "Calle Tenant B 200",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(owner_other["access_token"]),
+    )
+    assert venue_response.status_code == 201
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": venue_response.json()["id"],
+            "sport_id": str(sport.id),
+            "name": "Cancha B2",
+            "indoor": False,
+            "is_active": True,
+        },
+        headers=auth_headers(owner_other["access_token"]),
+    )
+    assert court_response.status_code == 201
+
+    create_timeslot_response = client.post(
+        "/timeslots",
+        json={
+            "court_id": court_response.json()["id"],
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=5)).isoformat(),
+            "ends_at": (datetime.now(timezone.utc) + timedelta(days=5, hours=1)).isoformat(),
+            "capacity": 4,
+            "price": 22000,
+            "is_active": True,
+        },
+        headers=auth_headers(staff_token),
+    )
+    assert create_timeslot_response.status_code == 400
+    assert create_timeslot_response.json()["detail"] == "Cancha no encontrada"
+
+    bulk_response = client.post(
+        "/admin/timeslots/bulk",
+        json={
+            "court_ids": [court_response.json()["id"]],
+            "window_starts_at": (datetime.now(timezone.utc) + timedelta(days=6)).isoformat(),
+            "window_ends_at": (datetime.now(timezone.utc) + timedelta(days=6, hours=2)).isoformat(),
+            "slot_minutes": 60,
+            "capacity": 4,
+            "price": 18000,
+            "is_active": True,
+        },
+        headers=auth_headers(staff_token),
+    )
+    assert bulk_response.status_code == 400
+    assert "court_id not found" in bulk_response.json()["detail"]
+
+
+def test_user_cannot_book_timeslot_from_other_tenant(client, db_session):
+    sport = Sport(name="Básquet", description="Aislamiento booking")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    tenant_b = onboard_organization(
+        client,
+        organization_name="Complejo Booking B",
+        organization_slug="complejo-booking-b",
+        admin_email="owner-booking-b@saas.com",
+    )
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Booking B",
+            "address": "Calle Tenant B 300",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(tenant_b["access_token"]),
+    )
+    assert venue_response.status_code == 201
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": venue_response.json()["id"],
+            "sport_id": str(sport.id),
+            "name": "Cancha Booking B",
+            "indoor": True,
+            "is_active": True,
+        },
+        headers=auth_headers(tenant_b["access_token"]),
+    )
+    assert court_response.status_code == 201
+
+    timeslot_response = client.post(
+        "/timeslots",
+        json={
+            "court_id": court_response.json()["id"],
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+            "ends_at": (datetime.now(timezone.utc) + timedelta(days=7, hours=1)).isoformat(),
+            "capacity": 4,
+            "price": 24000,
+            "is_active": True,
+        },
+        headers=auth_headers(tenant_b["access_token"]),
+    )
+    assert timeslot_response.status_code == 201
+
+    default_user_token = register_and_login(
+        client,
+        "tenant-a-user@example.com",
+        "password123",
+        "Tenant A User",
+    )
+
+    booking_response = client.post(
+        "/bookings",
+        json={"timeslot_id": timeslot_response.json()["id"]},
+        headers=auth_headers(default_user_token),
+    )
+    assert booking_response.status_code == 404
+    assert booking_response.json()["detail"] == "Turno no disponible"
 
 
 def test_core_records_created_through_flows_store_organization_id(client, db_session):
