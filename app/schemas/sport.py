@@ -25,3 +25,8 @@ class SportPublic(BaseModel):
     description: str | None = None
     booking_min_lead_minutes: int | None = None
     cancellation_min_lead_minutes: int | None = None
+
+
+class OrganizationSportPublic(BaseModel):
+    sport: SportPublic
+    is_enabled: bool

@@ -13,6 +13,8 @@ from app.core.security import create_access_token, create_refresh_token, get_pas
 from app.core.whatsapp import normalize_whatsapp_number
 from app.db.session import get_db
 from app.models.organization import Organization
+from app.models.organization_sport import OrganizationSport
+from app.models.sport import Sport
 from app.models.staff_invitation import StaffInvitation
 from app.models.user import User
 from app.schemas.organization import (
@@ -22,12 +24,14 @@ from app.schemas.organization import (
     OrganizationRequestContextPublic,
     OrganizationSettingsPublic,
     OrganizationSettingsUpdate,
+    OrganizationSportsUpdate,
     OrganizationUpdate,
     StaffInvitationAccept,
     StaffInvitationAcceptancePublic,
     StaffInvitationCreate,
     StaffInvitationPublic,
 )
+from app.schemas.sport import OrganizationSportPublic, SportPublic
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
@@ -90,6 +94,29 @@ def serialize_settings(settings) -> OrganizationSettingsPublic:
     )
 
 
+def ensure_organization_sport_rows(db: Session, organization: Organization) -> list[OrganizationSport]:
+    sports = db.query(Sport).order_by(Sport.name.asc()).all()
+    existing = {
+        row.sport_id: row
+        for row in db.query(OrganizationSport).filter(OrganizationSport.organization_id == organization.id).all()
+    }
+
+    created = False
+    for sport in sports:
+        if sport.id not in existing:
+            row = OrganizationSport(organization_id=organization.id, sport_id=sport.id, is_enabled=True)
+            db.add(row)
+            existing[sport.id] = row
+            created = True
+
+    if created:
+        db.commit()
+        for row in existing.values():
+            db.refresh(row)
+
+    return [existing[sport.id] for sport in sports]
+
+
 @router.get("/request-context", response_model=OrganizationRequestContextPublic)
 def get_request_context(
     organization: Organization = Depends(get_request_organization),
@@ -128,6 +155,9 @@ def onboard_organization(payload: OrganizationOnboardingCreate, db: Session = De
     settings.branding_name = payload.organization_name
     db.add(settings)
     db.flush()
+
+    for sport in db.query(Sport).all():
+        db.add(OrganizationSport(organization_id=organization.id, sport_id=sport.id, is_enabled=True))
 
     whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
     whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
@@ -213,6 +243,45 @@ def get_current_organization_settings(
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
     settings = get_or_create_organization_settings(db, organization)
     return serialize_settings(settings)
+
+
+@router.get("/current/sports", response_model=list[OrganizationSportPublic])
+def list_current_organization_sports(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+
+    rows = ensure_organization_sport_rows(db, organization)
+    return [OrganizationSportPublic(sport=SportPublic.model_validate(row.sport), is_enabled=row.is_enabled) for row in rows]
+
+
+@router.patch("/current/sports", response_model=list[OrganizationSportPublic])
+def update_current_organization_sports(
+    payload: OrganizationSportsUpdate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+
+    rows = ensure_organization_sport_rows(db, organization)
+    enabled_ids = {str(item) for item in payload.enabled_sport_ids}
+
+    for row in rows:
+        row.is_enabled = str(row.sport_id) in enabled_ids
+        db.add(row)
+
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+
+    return [OrganizationSportPublic(sport=SportPublic.model_validate(row.sport), is_enabled=row.is_enabled) for row in rows]
 
 
 @router.patch("/current/settings", response_model=OrganizationSettingsPublic)

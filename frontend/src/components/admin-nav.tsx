@@ -20,7 +20,7 @@ export function AdminNav() {
 
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <nav className="flex flex-wrap gap-2">
+      <nav className="flex flex-wrap gap-2" data-tour="admin-nav">
         {visibleLinks.map((link) => (
           <NavLink
             key={link.to}
@@ -36,7 +36,10 @@ export function AdminNav() {
         ))}
       </nav>
 
-      <div className="inline-flex items-center gap-2 self-start rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800">
+      <div
+        className="inline-flex items-center gap-2 self-start rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800"
+        data-tour="admin-tenant-badge"
+      >
         <Building2 size={16} />
         Administrando {organizationLabel}
       </div>

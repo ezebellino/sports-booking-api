@@ -66,13 +66,13 @@ export function AdminWhatsappPage() {
     mutationFn: api.updateCurrentOrganizationSettings,
     onSuccess: () => {
       setError(null);
-      setSuccess("Configuraci\u00f3n de WhatsApp actualizada correctamente.");
+      setSuccess("Configuración de WhatsApp actualizada correctamente.");
       void queryClient.invalidateQueries({ queryKey: ["current-organization-settings"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-whatsapp-status"] });
     },
     onError: (mutationError) => {
       setSuccess(null);
-      setError(mutationError instanceof Error ? mutationError.message : "No pudimos guardar la configuraci\u00f3n de WhatsApp.");
+      setError(mutationError instanceof Error ? mutationError.message : "No pudimos guardar la configuración de WhatsApp.");
     },
   });
 
@@ -96,7 +96,7 @@ export function AdminWhatsappPage() {
     return (
       <>
         <AppHeader />
-        <LoadingCard label="Revisando la configuraci\u00f3n de WhatsApp..." />
+        <LoadingCard label="Revisando la configuración de WhatsApp..." />
       </>
     );
   }
@@ -119,8 +119,8 @@ export function AdminWhatsappPage() {
 
         <SectionTitle
           eyebrow="Admin"
-          title="Operaci\u00f3n de WhatsApp"
-          description="Control\u00e1 si la integraci\u00f3n de este complejo est\u00e1 lista para producci\u00f3n, qu\u00e9 templates usa el sistema y qu\u00e9 falta completar antes de enviar mensajes reales a los clientes."
+          title="Operación de WhatsApp"
+          description="Controlá si la integración de este complejo está lista para producción, qué templates usa el sistema y qué falta completar antes de enviar mensajes reales a los clientes."
         />
 
         <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
@@ -132,7 +132,7 @@ export function AdminWhatsappPage() {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-950">Estado operativo</h3>
-                  <p className="text-sm text-slate-500">Resumen r\u00e1pido para saber si el canal est\u00e1 en modo prueba o listo para producci\u00f3n.</p>
+                  <p className="text-sm text-slate-500">Resumen rápido para saber si el canal está en modo prueba o listo para producción.</p>
                 </div>
               </div>
 
@@ -140,25 +140,25 @@ export function AdminWhatsappPage() {
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Proveedor</p>
                   <p className="mt-2 text-lg font-bold text-slate-950">{status.provider === "meta_cloud" ? "Meta Cloud" : "Deshabilitado"}</p>
-                  <p className="mt-2 text-sm text-slate-500">{status.enabled ? "Canal habilitado para WhatsApp real." : "Todav\u00eda no se activ\u00f3 el proveedor real."}</p>
+                  <p className="mt-2 text-sm text-slate-500">{status.enabled ? "Canal habilitado para WhatsApp real." : "Todavía no se activó el proveedor real."}</p>
                 </div>
 
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Modo actual</p>
-                  <p className="mt-2 text-lg font-bold text-slate-950">{status.test_mode ? "Pruebas" : "Producci\u00f3n"}</p>
+                  <p className="mt-2 text-lg font-bold text-slate-950">{status.test_mode ? "Pruebas" : "Producción"}</p>
                   <p className="mt-2 text-sm text-slate-500">
                     {status.test_mode
-                      ? "Hay un n\u00famero override activo, as\u00ed que los env\u00edos van a ese destino de prueba."
-                      : "Los mensajes salen al n\u00famero real que tenga cargado cada usuario."}
+                      ? "Hay un número override activo, así que los envíos van a ese destino de prueba."
+                      : "Los mensajes salen al número real que tenga cargado cada usuario."}
                   </p>
                 </div>
 
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Listo para enviar</p>
-                  <p className="mt-2 text-lg font-bold text-slate-950">{status.ready_for_live_send ? "S\u00ed" : "Todav\u00eda no"}</p>
+                  <p className="mt-2 text-lg font-bold text-slate-950">{status.ready_for_live_send ? "Sí" : "Todavía no"}</p>
                   <p className="mt-2 text-sm text-slate-500">
                     {status.ready_for_live_send
-                      ? "Las credenciales y los templates m\u00ednimos ya est\u00e1n definidos."
+                      ? "Las credenciales y los templates mínimos ya están definidos."
                       : "Falta completar al menos un punto obligatorio del checklist."}
                   </p>
                 </div>
@@ -168,8 +168,8 @@ export function AdminWhatsappPage() {
                 <div className="flex items-center gap-3">
                   <BellRing className="text-skyline" size={18} />
                   <div>
-                    <p className="font-semibold text-slate-950">Checklist de activaci\u00f3n</p>
-                    <p className="text-sm text-slate-500">Cada punto te dice si ya est\u00e1 cubierto y qu\u00e9 revisar si no lo est\u00e1.</p>
+                    <p className="font-semibold text-slate-950">Checklist de activación</p>
+                    <p className="text-sm text-slate-500">Cada punto te dice si ya está cubierto y qué revisar si no lo está.</p>
                   </div>
                 </div>
 
@@ -195,7 +195,7 @@ export function AdminWhatsappPage() {
                   <Save size={20} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-950">Configuraci\u00f3n tenant-level</h3>
+                  <h3 className="text-lg font-bold text-slate-950">Configuración tenant-level</h3>
                   <p className="text-sm text-slate-500">Estas credenciales y templates aplican solo a este complejo.</p>
                 </div>
               </div>
@@ -220,7 +220,7 @@ export function AdminWhatsappPage() {
                     className="field"
                     value={accessToken}
                     onChange={(event) => setAccessToken(event.target.value)}
-                    placeholder={settingsQuery.data?.has_whatsapp_access_token ? "Dej\u00e1 vac\u00edo para conservar el token actual" : "Pegar token"}
+                    placeholder={settingsQuery.data?.has_whatsapp_access_token ? "Dejá vacío para conservar el token actual" : "Pegar token"}
                   />
                 </div>
 
@@ -230,17 +230,17 @@ export function AdminWhatsappPage() {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Template de confirmaci\u00f3n</label>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Template de confirmación</label>
                   <input className="field" value={bookingConfirmedTemplate} onChange={(event) => setBookingConfirmedTemplate(event.target.value)} />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Template de cancelaci\u00f3n</label>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Template de cancelación</label>
                   <input className="field" value={bookingCancelledTemplate} onChange={(event) => setBookingCancelledTemplate(event.target.value)} />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">N\u00famero override para pruebas</label>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Número override para pruebas</label>
                   <input className="field" value={recipientOverride} onChange={(event) => setRecipientOverride(event.target.value)} placeholder="5491122334455" />
                 </div>
               </div>
@@ -262,7 +262,7 @@ export function AdminWhatsappPage() {
                 ) : (
                   <span className="inline-flex items-center gap-2">
                     <Save size={16} />
-                    Guardar configuraci\u00f3n
+                    Guardar configuración
                   </span>
                 )}
               </button>
@@ -283,7 +283,7 @@ export function AdminWhatsappPage() {
 
               <div className="mt-4 space-y-3 text-sm text-slate-600">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="font-semibold text-slate-900">Confirmaci\u00f3n de reserva</p>
+                  <p className="font-semibold text-slate-900">Confirmación de reserva</p>
                   <p className="mt-1 break-all font-mono text-xs text-slate-500">{status.booking_confirmed_template || "Sin definir"}</p>
                   <div className="mt-2">
                     <StatusPill ok={status.has_booking_confirmed_template} label={status.has_booking_confirmed_template ? "Template listo" : "Falta definir"} />
@@ -291,7 +291,7 @@ export function AdminWhatsappPage() {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="font-semibold text-slate-900">Cancelaci\u00f3n de reserva</p>
+                  <p className="font-semibold text-slate-900">Cancelación de reserva</p>
                   <p className="mt-1 break-all font-mono text-xs text-slate-500">{status.booking_cancelled_template || "Sin definir"}</p>
                   <div className="mt-2">
                     <StatusPill ok={status.has_booking_cancelled_template} label={status.has_booking_cancelled_template ? "Template listo" : "Falta definir"} />
@@ -311,14 +311,14 @@ export function AdminWhatsappPage() {
                   <Wrench size={20} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-950">Qu\u00e9 revisar antes de salir en vivo</h3>
+                  <h3 className="text-lg font-bold text-slate-950">Qué revisar antes de salir en vivo</h3>
                   <p className="text-sm text-slate-500">Checklist corto para evitar pruebas sobre clientes reales.</p>
                 </div>
               </div>
 
               {status.missing_items.length ? (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  <p className="font-semibold">Todav\u00eda falta completar:</p>
+                  <p className="font-semibold">Todavía falta completar:</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5">
                     {status.missing_items.map((item) => (
                       <li key={item}>{item}</li>
@@ -329,7 +329,7 @@ export function AdminWhatsappPage() {
                 <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5" size={16} />
-                    <p>La integraci\u00f3n ya tiene cubiertos todos los requisitos m\u00ednimos para operar.</p>
+                    <p>La integración ya tiene cubiertos todos los requisitos mínimos para operar.</p>
                   </div>
                 </div>
               )}
@@ -337,13 +337,13 @@ export function AdminWhatsappPage() {
               <div className="mt-4 space-y-3 text-sm text-slate-600">
                 <p>
                   {status.test_mode
-                    ? "Mientras el override siga activo, todos los env\u00edos ir\u00e1n al n\u00famero de prueba. Es ideal para validar templates sin tocar clientes reales."
-                    : "Sin override, el sistema usar\u00e1 el n\u00famero de WhatsApp que tenga guardado cada usuario con opt-in activo."}
+                    ? "Mientras el override siga activo, todos los envíos irán al número de prueba. Es ideal para validar templates sin tocar clientes reales."
+                    : "Sin override, el sistema usará el número de WhatsApp que tenga guardado cada usuario con opt-in activo."}
                 </p>
                 <p>
-                  N\u00famero override actual: <span className="font-semibold text-slate-900">{status.recipient_override || "No configurado"}</span>
+                  Número override actual: <span className="font-semibold text-slate-900">{status.recipient_override || "No configurado"}</span>
                 </p>
-                <p>Recomendaci\u00f3n: hac\u00e9 una reserva de prueba y una cancelaci\u00f3n de prueba despu\u00e9s de cada cambio de template o credencial.</p>
+                <p>Recomendación: hacé una reserva de prueba y una cancelación de prueba después de cada cambio de template o credencial.</p>
               </div>
             </div>
           </div>

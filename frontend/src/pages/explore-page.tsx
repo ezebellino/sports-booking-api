@@ -23,6 +23,7 @@ import { SectionTitle } from "../components/section-title";
 import { api, type BookingPolicy, type TimeSlot } from "../lib/api";
 import { showTimedSuccess } from "../lib/dialog";
 import { currency, dateInputDefault, dateLabel, localDateBounds, timeZoneSummary } from "../lib/format";
+import { useSessionTour } from "../lib/session-tour";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function ExplorePage() {
@@ -128,6 +129,41 @@ export function ExplorePage() {
 
   const progress = [selectedSport, selectedVenue, selectedCourt].filter(Boolean).length;
 
+  useSessionTour({
+    sessionKey: `tour:explore:${isAuthenticated ? "auth" : "guest"}`,
+    enabled: !sportsQuery.isLoading,
+    steps: [
+      {
+        element: '[data-tour="explore-progress"]',
+        popover: {
+          title: "Progreso de reserva",
+          description: "El flujo baja en orden: deporte, sede, cancha y finalmente los turnos.",
+        },
+      },
+      {
+        element: '[data-tour="explore-sports"]',
+        popover: {
+          title: "Paso 1",
+          description: "Elegí el deporte para filtrar el resto de la búsqueda desde el inicio.",
+        },
+      },
+      {
+        element: '[data-tour="explore-venues"]',
+        popover: {
+          title: "Paso 2",
+          description: "Las sedes se ajustan al deporte seleccionado y mantienen la lógica del complejo.",
+        },
+      },
+      {
+        element: '[data-tour="explore-timeslots"]',
+        popover: {
+          title: "Paso 3",
+          description: "Acá terminás la reserva. Solo se muestran turnos vigentes y disponibles para la fecha elegida.",
+        },
+      },
+    ],
+  });
+
   return (
     <>
       <AppHeader />
@@ -164,7 +200,7 @@ export function ExplorePage() {
           </div>
         ) : null}
 
-        <div className="shell-card sticky top-3 z-10 border border-slate-200/80 bg-white/95 p-4 backdrop-blur">
+        <div className="shell-card sticky top-3 z-10 border border-slate-200/80 bg-white/95 p-4 backdrop-blur" data-tour="explore-progress">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Progreso de reserva</p>
@@ -200,7 +236,7 @@ export function ExplorePage() {
 
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
           <div className="space-y-4">
-            <section className="shell-card p-5">
+            <section className="shell-card p-5" data-tour="explore-sports">
               <FilterTitle icon={Trophy} title="1. Deporte" subtitle="Elegí qué querés jugar" />
               {sportsQuery.isLoading ? (
                 <LoadingCard label="Cargando deportes..." />
@@ -220,7 +256,7 @@ export function ExplorePage() {
               )}
             </section>
 
-            <section className="shell-card p-5">
+            <section className="shell-card p-5" data-tour="explore-venues">
               <FilterTitle icon={MapPin} title="2. Sede" subtitle="Filtrada según el deporte elegido" />
               {!selectedSportId ? (
                 <StepHint message="Elegí un deporte para ver solo las sedes que aplican a esa búsqueda y su política operativa." />
@@ -256,7 +292,7 @@ export function ExplorePage() {
           </div>
 
           <div className="space-y-4">
-            <section className="shell-card p-5">
+            <section className="shell-card p-5" data-tour="explore-timeslots">
               <FilterTitle icon={Trees} title="3. Cancha" subtitle="Elegí dónde querés reservar" />
               {!selectedVenueId ? (
                 <StepHint message="Primero seleccioná una sede para ver sus canchas disponibles." />

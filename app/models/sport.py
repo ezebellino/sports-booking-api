@@ -18,3 +18,4 @@ class Sport(Base):
     cancellation_min_lead_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     courts = relationship("Court", back_populates="sport", cascade="all, delete-orphan")
+    organization_sports = relationship("OrganizationSport", back_populates="sport", cascade="all, delete-orphan")

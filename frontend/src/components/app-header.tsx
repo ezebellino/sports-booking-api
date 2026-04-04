@@ -20,7 +20,7 @@ export function AppHeader() {
   return (
     <header className="mb-6 flex flex-col gap-4 pt-2">
       <div className="flex items-center justify-between gap-3">
-        <Link to="/" className="flex items-center gap-3">
+        <Link to="/" className="flex items-center gap-3" data-tour="app-brand">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-soft">
             <Ticket size={20} />
           </div>
@@ -32,14 +32,14 @@ export function AppHeader() {
         </Link>
 
         <div className="hidden items-center gap-3 md:flex">
-          <DesktopNavLink to="/explore" icon={<MapPinned size={16} />}>
+          <DesktopNavLink to="/explore" icon={<MapPinned size={16} />} tourId="nav-explore">
             Explorar
           </DesktopNavLink>
-          <DesktopNavLink to="/bookings" icon={<CalendarCheck2 size={16} />}>
+          <DesktopNavLink to="/bookings" icon={<CalendarCheck2 size={16} />} tourId="nav-bookings">
             Mis reservas
           </DesktopNavLink>
           {canAccessAdmin ? (
-            <DesktopNavLink to="/admin/inventory" icon={<Shield size={16} />}>
+            <DesktopNavLink to="/admin/inventory" icon={<Shield size={16} />} tourId="nav-admin">
               Admin
             </DesktopNavLink>
           ) : null}
@@ -94,10 +94,12 @@ function DesktopNavLink({
   to,
   children,
   icon,
+  tourId,
 }: {
   to: string;
   children: string;
   icon: ReactNode;
+  tourId?: string;
 }) {
   return (
     <NavLink
@@ -107,6 +109,7 @@ function DesktopNavLink({
           isActive ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white"
         }`
       }
+      data-tour={tourId}
     >
       {icon}
       {children}

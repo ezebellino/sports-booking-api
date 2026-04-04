@@ -37,3 +37,4 @@ class Organization(Base):
     bookings = relationship("Booking", back_populates="organization")
     settings = relationship("OrganizationSettings", back_populates="organization", uselist=False, cascade="all, delete-orphan")
     staff_invitations = relationship("StaffInvitation", back_populates="organization", cascade="all, delete-orphan")
+    organization_sports = relationship("OrganizationSport", back_populates="organization", cascade="all, delete-orphan")

@@ -64,6 +64,11 @@ export type Sport = {
   cancellation_min_lead_minutes: number | null;
 };
 
+export type OrganizationSport = {
+  sport: Sport;
+  is_enabled: boolean;
+};
+
 export type Venue = {
   id: string;
   name: string;
@@ -427,6 +432,32 @@ export const api = {
     }),
 
   listSports: () => request<Sport[]>("/sports"),
+
+  listSportsCatalog: () => request<Sport[]>("/sports/catalog", { auth: true }),
+
+  createSport: (input: {
+    name: string;
+    description?: string | null;
+    booking_min_lead_minutes?: number | null;
+    cancellation_min_lead_minutes?: number | null;
+  }) =>
+    request<Sport>("/sports", {
+      method: "POST",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  listCurrentOrganizationSports: () =>
+    request<OrganizationSport[]>("/organizations/current/sports", { auth: true }),
+
+  updateCurrentOrganizationSports: (enabledSportIds: string[]) =>
+    request<OrganizationSport[]>("/organizations/current/sports", {
+      method: "PATCH",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled_sport_ids: enabledSportIds }),
+    }),
 
   updateSport: (
     sportId: string,

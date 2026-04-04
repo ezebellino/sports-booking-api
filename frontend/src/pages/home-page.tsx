@@ -5,6 +5,7 @@ import { AppHeader } from "../components/app-header";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api } from "../lib/api";
+import { useSessionTour } from "../lib/session-tour";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function HomePage() {
@@ -20,6 +21,34 @@ export function HomePage() {
     contextQuery.data?.branding_name ??
     contextQuery.data?.organization.name ??
     "Complejo Demo";
+
+  useSessionTour({
+    sessionKey: `tour:home:${isAuthenticated ? user?.role ?? "auth" : "guest"}`,
+    enabled: !sportsQuery.isLoading && !venuesQuery.isLoading,
+    steps: [
+      {
+        element: '[data-tour="app-brand"]',
+        popover: {
+          title: "Complejo activo",
+          description: "Desde acá ves la marca del complejo y tu contexto actual dentro de la plataforma.",
+        },
+      },
+      {
+        element: '[data-tour="home-primary-action"]',
+        popover: {
+          title: "Entrada principal",
+          description: "Este acceso te lleva directo al flujo de búsqueda y reserva.",
+        },
+      },
+      {
+        element: '[data-tour="home-metrics"]',
+        popover: {
+          title: "Resumen rápido",
+          description: "Muestra cuántos deportes y sedes están disponibles y qué perfil operativo tenés.",
+        },
+      },
+    ],
+  });
 
   return (
     <>
@@ -45,7 +74,7 @@ export function HomePage() {
             </div>
           ) : null}
 
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row" data-tour="home-primary-action">
             <Link className="btn-primary" to="/explore">
               Empezar a explorar
               <ArrowRight className="ml-2" size={16} />
@@ -55,7 +84,7 @@ export function HomePage() {
             </Link>
           </div>
 
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+          <div className="mt-8 grid gap-3 sm:grid-cols-3" data-tour="home-metrics">
             <MetricCard label="Deportes" value={String(sportsQuery.data?.length ?? 0)} icon={<ShieldCheck size={18} />} />
             <MetricCard label="Sedes" value={String(venuesQuery.data?.length ?? 0)} icon={<Map size={18} />} />
             <MetricCard label="Perfil" value={isAdmin ? "Admin" : canAccessAdmin ? "Staff" : "Usuario"} icon={<CalendarRange size={18} />} />

@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
 from app.models.organization import Organization
+from app.models.organization_sport import OrganizationSport
 from app.models.sport import Sport
 from app.models.timeslot import TimeSlot
 from app.models.user import User
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/courts", tags=["courts"])
 COURT_NOT_FOUND_DETAIL = "Cancha no encontrada"
 VENUE_NOT_FOUND_DETAIL = "Sede no encontrada"
 SPORT_NOT_FOUND_DETAIL = "Deporte no encontrado"
+SPORT_NOT_ENABLED_DETAIL = "El deporte no está habilitado para este complejo"
 COURT_DELETE_BLOCKED_FUTURE_TIMESLOTS_DETAIL = "No se puede eliminar una cancha con turnos futuros asociados"
 COURT_DELETE_BLOCKED_BOOKINGS_DETAIL = "No se puede eliminar una cancha con reservas asociadas"
 VENUE_SPORT_MISMATCH_DETAIL = "La sede elegida solo permite otro deporte"
@@ -35,6 +37,13 @@ def create_court(
         raise HTTPException(status_code=400, detail=VENUE_NOT_FOUND_DETAIL)
     if not db.get(Sport, payload.sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
+    enabled = db.query(OrganizationSport).filter(
+        OrganizationSport.organization_id == current_admin.organization_id,
+        OrganizationSport.sport_id == payload.sport_id,
+        OrganizationSport.is_enabled.is_(True),
+    ).first()
+    if not enabled:
+        raise HTTPException(status_code=400, detail=SPORT_NOT_ENABLED_DETAIL)
     if venue.allowed_sport_id and venue.allowed_sport_id != payload.sport_id:
         raise HTTPException(status_code=400, detail=VENUE_SPORT_MISMATCH_DETAIL)
 
@@ -88,6 +97,13 @@ def update_court(
         raise HTTPException(status_code=400, detail=VENUE_NOT_FOUND_DETAIL)
     if not db.get(Sport, next_sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
+    enabled = db.query(OrganizationSport).filter(
+        OrganizationSport.organization_id == current_admin.organization_id,
+        OrganizationSport.sport_id == next_sport_id,
+        OrganizationSport.is_enabled.is_(True),
+    ).first()
+    if not enabled:
+        raise HTTPException(status_code=400, detail=SPORT_NOT_ENABLED_DETAIL)
     if venue.allowed_sport_id and venue.allowed_sport_id != next_sport_id:
         raise HTTPException(status_code=400, detail=VENUE_SPORT_MISMATCH_DETAIL)
 

@@ -61,3 +61,41 @@ body {
     @apply border-transparent bg-ink text-white shadow-md;
   }
 }
+
+.driver-popover {
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+}
+
+.driver-popover-title {
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.driver-popover-description {
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.driver-popover-footer button {
+  border-radius: 14px;
+  border: 0;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.driver-popover-next-btn,
+.driver-popover-done-btn {
+  background: #0f172a !important;
+  color: white !important;
+}
+
+.driver-popover-prev-btn {
+  background: #e2e8f0 !important;
+  color: #334155 !important;
+}

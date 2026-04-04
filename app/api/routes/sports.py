@@ -3,8 +3,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import require_admin
+from app.api.deps.auth import get_request_organization, require_admin
 from app.db.session import get_db
+from app.models.organization import Organization
+from app.models.organization_sport import OrganizationSport
 from app.models.sport import Sport
 from app.models.user import User
 from app.schemas.sport import SportCreate, SportPublic, SportUpdate
@@ -20,7 +22,7 @@ EMPTY_SPORT_UPDATE_DETAIL = "No hay cambios para aplicar"
 def create_sport(
     payload: SportCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
     exist = db.query(Sport).filter(Sport.name.ilike(payload.name)).first()
     if exist:
@@ -32,19 +34,52 @@ def create_sport(
         cancellation_min_lead_minutes=payload.cancellation_min_lead_minutes,
     )
     db.add(sport)
+    db.flush()
+    organizations = db.query(Organization).all()
+    for organization in organizations:
+        db.add(
+            OrganizationSport(
+                organization_id=organization.id,
+                sport_id=sport.id,
+                is_enabled=organization.id == current_admin.organization_id,
+            )
+        )
     db.commit()
     db.refresh(sport)
     return sport
 
 
+@router.get("/catalog", response_model=list[SportPublic])
+def list_sports_catalog(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+    q: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=300),
+    offset: int = Query(0, ge=0),
+):
+    query = db.query(Sport)
+    if q:
+        query = query.filter(Sport.name.ilike(f"%{q}%"))
+    return query.order_by(Sport.name.asc()).limit(limit).offset(offset).all()
+
+
 @router.get("", response_model=list[SportPublic])
 def list_sports(
     db: Session = Depends(get_db),
+    organization: Organization = Depends(get_request_organization),
     q: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    query = db.query(Sport)
+    query = (
+        db.query(Sport)
+        .join(
+            OrganizationSport,
+            (OrganizationSport.sport_id == Sport.id)
+            & (OrganizationSport.organization_id == organization.id),
+        )
+        .filter(OrganizationSport.is_enabled.is_(True))
+    )
     if q:
         query = query.filter(Sport.name.ilike(f"%{q}%"))
     return query.order_by(Sport.name.asc()).limit(limit).offset(offset).all()

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import get_request_organization, require_staff_or_admin
 from app.db.session import get_db
 from app.models.organization import Organization
+from app.models.organization_sport import OrganizationSport
 from app.models.sport import Sport
 from app.models.venue import Venue
 from app.models.user import User
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/venues", tags=["venues"])
 
 VENUE_NOT_FOUND_DETAIL = "Sede no encontrada"
 SPORT_NOT_FOUND_DETAIL = "Deporte no encontrado"
+SPORT_NOT_ENABLED_DETAIL = "El deporte no está habilitado para este complejo"
 VENUE_DELETE_BLOCKED_DETAIL = "No se puede eliminar una sede con canchas asociadas"
 
 
@@ -24,6 +26,14 @@ def create_venue(
 ):
     if payload.allowed_sport_id and not db.get(Sport, payload.allowed_sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
+    if payload.allowed_sport_id:
+        enabled = db.query(OrganizationSport).filter(
+            OrganizationSport.organization_id == current_admin.organization_id,
+            OrganizationSport.sport_id == payload.allowed_sport_id,
+            OrganizationSport.is_enabled.is_(True),
+        ).first()
+        if not enabled:
+            raise HTTPException(status_code=400, detail=SPORT_NOT_ENABLED_DETAIL)
 
     venue = Venue(
         organization_id=current_admin.organization_id,
@@ -65,6 +75,14 @@ def update_venue(
 
     if payload.allowed_sport_id is not None and payload.allowed_sport_id and not db.get(Sport, payload.allowed_sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
+    if payload.allowed_sport_id is not None and payload.allowed_sport_id:
+        enabled = db.query(OrganizationSport).filter(
+            OrganizationSport.organization_id == current_admin.organization_id,
+            OrganizationSport.sport_id == payload.allowed_sport_id,
+            OrganizationSport.is_enabled.is_(True),
+        ).first()
+        if not enabled:
+            raise HTTPException(status_code=400, detail=SPORT_NOT_ENABLED_DETAIL)
 
     if payload.name is not None:
         venue.name = payload.name

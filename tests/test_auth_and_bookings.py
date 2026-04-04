@@ -1194,6 +1194,126 @@ def test_public_venue_listing_uses_default_organization_scope(client, db_session
     assert "Sede Sur" not in names
 
 
+def test_current_organization_can_disable_sports_from_global_catalog(client, db_session):
+    db_session.add_all(
+        [
+            Sport(name="Tenis", description="Catálogo global"),
+            Sport(name="Padel", description="Catálogo global"),
+        ]
+    )
+    db_session.commit()
+
+    onboard_response = onboard_organization(
+        client,
+        organization_name="Complejo Deportes",
+        organization_slug="complejo-deportes",
+        admin_email="deportes-admin@saas.com",
+    )
+    admin_token = onboard_response["access_token"]
+
+    catalog_response = client.get("/sports/catalog", headers=auth_headers(admin_token))
+    assert catalog_response.status_code == 200
+    catalog = catalog_response.json()
+    assert len(catalog) >= 1
+
+    enabled_response = client.get("/sports", headers=auth_headers(admin_token))
+    assert enabled_response.status_code == 200
+    assert len(enabled_response.json()) == len(catalog)
+
+    target_sport_id = catalog[0]["id"]
+    remaining_ids = [sport["id"] for sport in catalog[1:]]
+
+    update_response = client.patch(
+        "/organizations/current/sports",
+        json={"enabled_sport_ids": remaining_ids},
+        headers=auth_headers(admin_token),
+    )
+    assert update_response.status_code == 200
+
+    current_sports_response = client.get("/organizations/current/sports", headers=auth_headers(admin_token))
+    assert current_sports_response.status_code == 200
+    current_sports = current_sports_response.json()
+    toggled_sport = next(item for item in current_sports if item["sport"]["id"] == target_sport_id)
+    assert toggled_sport["is_enabled"] is False
+
+    visible_sports_response = client.get("/sports", headers=auth_headers(admin_token))
+    assert visible_sports_response.status_code == 200
+    visible_ids = {sport["id"] for sport in visible_sports_response.json()}
+    assert target_sport_id not in visible_ids
+
+
+def test_disabled_sport_is_blocked_for_operational_setup(client, db_session):
+    db_session.add_all(
+        [
+            Sport(name="Básquet", description="Catálogo global"),
+            Sport(name="Vóley", description="Catálogo global"),
+        ]
+    )
+    db_session.commit()
+
+    sport_a = onboard_organization(
+        client,
+        organization_name="Complejo Setup",
+        organization_slug="complejo-setup",
+        admin_email="setup-admin@saas.com",
+    )
+    admin_token = sport_a["access_token"]
+
+    catalog_response = client.get("/sports/catalog", headers=auth_headers(admin_token))
+    assert catalog_response.status_code == 200
+    catalog = catalog_response.json()
+    assert len(catalog) >= 2
+
+    disabled_sport = catalog[0]
+    enabled_sport = catalog[1]
+
+    disable_response = client.patch(
+        "/organizations/current/sports",
+        json={"enabled_sport_ids": [enabled_sport["id"]]},
+        headers=auth_headers(admin_token),
+    )
+    assert disable_response.status_code == 200
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Setup",
+            "address": "Calle Setup 100",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": disabled_sport["id"],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert venue_response.status_code == 400
+    assert venue_response.json()["detail"] == "El deporte no está habilitado para este complejo"
+
+    enabled_venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Setup OK",
+            "address": "Calle Setup 200",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": enabled_sport["id"],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert enabled_venue_response.status_code == 201
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": enabled_venue_response.json()["id"],
+            "sport_id": disabled_sport["id"],
+            "name": "Cancha no válida",
+            "indoor": True,
+            "is_active": True,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert court_response.status_code == 400
+    assert court_response.json()["detail"] == "El deporte no está habilitado para este complejo"
+
+
 def test_admin_cannot_manage_other_tenant_operational_resources(client, db_session):
     sport = Sport(name="Hockey", description="Aislamiento admin")
     db_session.add(sport)
@@ -2015,4 +2135,41 @@ def test_admin_holidays_surfaces_provider_failures(client, db_session, monkeypat
     response = client.get("/admin/holidays?year=2026&country_code=AR", headers=auth_headers(admin_token))
     assert response.status_code == 502
     assert response.json()["detail"] == "Proveedor caído"
+
+
+def test_admin_can_create_global_sport_and_enable_it_for_current_organization(client):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Deportes",
+            "admin_full_name": "Deportes Admin",
+            "admin_email": "deportes-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    create_response = client.post(
+        "/sports",
+        json={
+            "name": "Pilates",
+            "description": "Clases con cupos por cama",
+            "booking_min_lead_minutes": 60,
+            "cancellation_min_lead_minutes": 180,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert create_response.status_code == 201
+    created_sport = create_response.json()
+    assert created_sport["name"] == "Pilates"
+
+    enabled_response = client.get("/organizations/current/sports", headers=auth_headers(admin_token))
+    assert enabled_response.status_code == 200
+    enabled_sports = enabled_response.json()
+    assert any(item["sport"]["name"] == "Pilates" and item["is_enabled"] for item in enabled_sports)
+
+    public_response = client.get("/sports", headers=auth_headers(admin_token))
+    assert public_response.status_code == 200
+    assert any(item["name"] == "Pilates" for item in public_response.json())
 
