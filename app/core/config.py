@@ -41,3 +41,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # pyright: ignore[reportCallIssue]
+
+if settings.DATABASE_URL.startswith("postgres://"):
+    settings.DATABASE_URL = settings.DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
