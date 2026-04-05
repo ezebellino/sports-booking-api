@@ -149,6 +149,24 @@ export type AdminMetrics = {
   by_venue: AdminMetricsBucket[];
 };
 
+export type AdminReadinessItem = {
+  key: string;
+  label: string;
+  ready: boolean;
+  detail: string;
+};
+
+export type AdminReadiness = {
+  summary: {
+    is_ready: boolean;
+    completed_items: number;
+    total_items: number;
+    readiness_percent: number;
+    missing_items: string[];
+  };
+  items: AdminReadinessItem[];
+};
+
 export type NotificationStatus = {
   provider: string;
   enabled: boolean;
@@ -564,6 +582,8 @@ export const api = {
     const suffix = searchParams.toString();
     return request<AdminMetrics>(suffix ? `/admin/metrics?${suffix}` : "/admin/metrics", { auth: true });
   },
+
+  getAdminReadiness: () => request<AdminReadiness>("/admin/readiness", { auth: true }),
 
   getNotificationStatus: () => request<NotificationStatus>("/admin/notification-status", { auth: true }),
 

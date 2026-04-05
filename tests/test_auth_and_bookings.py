@@ -2510,3 +2510,84 @@ def test_admin_can_upload_organization_logo(client, monkeypatch, tmp_path):
     relative_path = payload["logo_url"].removeprefix("/media/")
     assert (tmp_path / "uploads" / relative_path).exists()
 
+
+def test_admin_readiness_reflects_operational_setup(client, db_session):
+    sport = Sport(name="Pilates Readiness", description="Clases")
+    db_session.add(sport)
+    db_session.commit()
+
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Ready",
+            "admin_full_name": "Ready Admin",
+            "admin_email": "ready-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+    organization_id = onboard_response.json()["organization"]["id"]
+
+    initial_response = client.get("/admin/readiness", headers=auth_headers(admin_token))
+    assert initial_response.status_code == 200
+    initial_payload = initial_response.json()
+    assert initial_payload["summary"]["is_ready"] is False
+    assert "WhatsApp operativo" in initial_payload["summary"]["missing_items"]
+    assert "Sedes cargadas" in initial_payload["summary"]["missing_items"]
+
+    settings = db_session.query(OrganizationSettings).filter(OrganizationSettings.organization_id == organization_id).first()
+    settings.logo_url = "/media/organization-logos/mock/logo.png"
+    settings.primary_color = "#112233"
+    settings.booking_min_lead_minutes = 30
+    settings.cancellation_min_lead_minutes = 120
+    settings.whatsapp_provider = "meta_cloud"
+    settings.whatsapp_access_token = "token"
+    settings.whatsapp_phone_number_id = "phone-id"
+    settings.whatsapp_template_language = "es_AR"
+    settings.whatsapp_template_booking_confirmed = "booking_ok"
+    settings.whatsapp_template_booking_cancelled = "booking_cancel"
+    db_session.add(settings)
+    db_session.flush()
+
+    venue = Venue(
+        name="Sede Ready",
+        address="Lista 123",
+        timezone="America/Argentina/Buenos_Aires",
+        allowed_sport_id=sport.id,
+        organization_id=organization_id,
+    )
+    db_session.add(venue)
+    db_session.flush()
+
+    court = Court(
+        venue_id=venue.id,
+        sport_id=sport.id,
+        name="Sala 1",
+        indoor=True,
+        is_active=True,
+        organization_id=organization_id,
+    )
+    db_session.add(court)
+    db_session.flush()
+
+    starts_at = datetime.now(timezone.utc) + timedelta(days=3)
+    timeslot = TimeSlot(
+        court_id=court.id,
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        capacity=8,
+        price=15000,
+        is_active=True,
+        organization_id=organization_id,
+    )
+    db_session.add(timeslot)
+    db_session.commit()
+
+    ready_response = client.get("/admin/readiness", headers=auth_headers(admin_token))
+    assert ready_response.status_code == 200
+    ready_payload = ready_response.json()
+    assert ready_payload["summary"]["is_ready"] is True
+    assert ready_payload["summary"]["readiness_percent"] == 100
+    assert ready_payload["summary"]["missing_items"] == []
+

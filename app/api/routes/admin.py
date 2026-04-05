@@ -17,6 +17,7 @@ from app.core.holidays import HolidayProviderError, fetch_public_holidays, filte
 from app.core.organization_settings import get_or_create_organization_settings
 from app.core.whatsapp import notification_status_payload
 from app.models.organization import Organization
+from app.models.organization_sport import OrganizationSport
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
@@ -24,6 +25,9 @@ from app.models.timeslot import TimeSlot
 from app.models.user import User
 from app.models.venue import Venue
 from app.schemas.admin import (
+    AdminReadinessItem,
+    AdminReadinessPublic,
+    AdminReadinessSummary,
     AdminMetricsBucket,
     AdminMetricsPublic,
     AdminMetricsSummary,
@@ -39,6 +43,111 @@ from app.schemas.user import UserPublic
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 INACTIVE_COURT_BULK_DETAIL = "No se pueden generar turnos sobre canchas inactivas"
+
+
+@router.get("/readiness", response_model=AdminReadinessPublic)
+def get_admin_readiness(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_manage_organization),
+):
+    organization = db.get(Organization, current_admin.organization_id)
+    settings = get_or_create_organization_settings(db, organization) if organization else None
+    whatsapp_status = notification_status_payload(settings)
+    now = datetime.now(timezone.utc)
+
+    enabled_sports_count = int(
+        db.execute(
+            select(func.count(OrganizationSport.sport_id))
+            .where(
+                OrganizationSport.organization_id == current_admin.organization_id,
+                OrganizationSport.is_enabled.is_(True),
+            )
+        ).scalar_one()
+    )
+
+    venues_count = int(
+        db.execute(
+            select(func.count(Venue.id)).where(Venue.organization_id == current_admin.organization_id)
+        ).scalar_one()
+    )
+    courts_count = int(
+        db.execute(
+            select(func.count(Court.id)).where(Court.organization_id == current_admin.organization_id)
+        ).scalar_one()
+    )
+    upcoming_timeslots_count = int(
+        db.execute(
+            select(func.count(TimeSlot.id)).where(
+                TimeSlot.organization_id == current_admin.organization_id,
+                TimeSlot.is_active.is_(True),
+                TimeSlot.starts_at > now,
+            )
+        ).scalar_one()
+    )
+
+    items = [
+        AdminReadinessItem(
+            key="branding",
+            label="Branding del complejo",
+            ready=bool(settings and settings.branding_name and (settings.logo_url or settings.primary_color)),
+            detail="Definí nombre de marca y al menos un logo o color principal visible.",
+        ),
+        AdminReadinessItem(
+            key="booking_policy",
+            label="Política general",
+            ready=bool(
+                settings
+                and settings.booking_min_lead_minutes is not None
+                and settings.cancellation_min_lead_minutes is not None
+            ),
+            detail="Configurá anticipación mínima para reservar y cancelar.",
+        ),
+        AdminReadinessItem(
+            key="whatsapp",
+            label="WhatsApp operativo",
+            ready=bool(whatsapp_status["ready_for_live_send"]),
+            detail="Cargá proveedor, credenciales y templates para enviar mensajes reales.",
+        ),
+        AdminReadinessItem(
+            key="sports",
+            label="Deportes habilitados",
+            ready=enabled_sports_count > 0,
+            detail="Habilitá al menos un deporte para que el complejo tenga oferta visible.",
+        ),
+        AdminReadinessItem(
+            key="venues",
+            label="Sedes cargadas",
+            ready=venues_count > 0,
+            detail="Creá al menos una sede operativa.",
+        ),
+        AdminReadinessItem(
+            key="courts",
+            label="Canchas cargadas",
+            ready=courts_count > 0,
+            detail="Creá al menos una cancha o recurso reservable.",
+        ),
+        AdminReadinessItem(
+            key="upcoming_timeslots",
+            label="Turnos futuros publicados",
+            ready=upcoming_timeslots_count > 0,
+            detail="Publicá al menos un turno futuro para que el usuario pueda reservar.",
+        ),
+    ]
+
+    completed_items = sum(1 for item in items if item.ready)
+    total_items = len(items)
+    missing_items = [item.label for item in items if not item.ready]
+
+    return AdminReadinessPublic(
+        summary=AdminReadinessSummary(
+            is_ready=completed_items == total_items,
+            completed_items=completed_items,
+            total_items=total_items,
+            readiness_percent=round(completed_items / total_items * 100) if total_items else 0,
+            missing_items=missing_items,
+        ),
+        items=items,
+    )
 
 
 @router.get("/users", response_model=list[UserPublic])

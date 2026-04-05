@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel
+from pydantic import BaseModel
 
 
 class AdminMetricsBucket(BaseModel):
@@ -73,3 +73,23 @@ class HolidayCalendarPublic(BaseModel):
     year: int
     month: int | None = None
     holidays: list[HolidayPublic]
+
+
+class AdminReadinessItem(BaseModel):
+    key: str
+    label: str
+    ready: bool
+    detail: str
+
+
+class AdminReadinessSummary(BaseModel):
+    is_ready: bool
+    completed_items: int
+    total_items: int
+    readiness_percent: int
+    missing_items: list[str]
+
+
+class AdminReadinessPublic(BaseModel):
+    summary: AdminReadinessSummary
+    items: list[AdminReadinessItem]

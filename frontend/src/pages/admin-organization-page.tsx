@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
   CircleAlert,
+  CircleCheckBig,
   ImageUp,
   LoaderCircle,
   Palette,
@@ -46,6 +47,10 @@ export function AdminOrganizationPage() {
   const organizationSportsQuery = useQuery({
     queryKey: ["current-organization-sports"],
     queryFn: api.listCurrentOrganizationSports,
+  });
+  const readinessQuery = useQuery({
+    queryKey: ["admin-readiness"],
+    queryFn: api.getAdminReadiness,
   });
 
   const [name, setName] = useState("");
@@ -164,6 +169,7 @@ export function AdminOrganizationPage() {
       setError(null);
       setSuccess("Perfil del complejo actualizado correctamente.");
       void organizationQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
       void queryClient.invalidateQueries({ queryKey: ["request-organization-context"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization"] });
     },
@@ -179,6 +185,7 @@ export function AdminOrganizationPage() {
       setError(null);
       setSuccess("Branding y política general actualizados correctamente.");
       void settingsQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
       void queryClient.invalidateQueries({ queryKey: ["request-organization-context"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization-settings"] });
     },
@@ -197,6 +204,7 @@ export function AdminOrganizationPage() {
       setError(null);
       setSuccess("Deportes habilitados actualizados correctamente.");
       void organizationSportsQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
       void queryClient.invalidateQueries({ queryKey: ["sports"] });
       void queryClient.invalidateQueries({ queryKey: ["venues"] });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
@@ -218,6 +226,7 @@ export function AdminOrganizationPage() {
       setSportForm(emptySportForm);
       setError(null);
       setSuccess("Deporte creado y habilitado para este complejo.");
+      void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization-sports"] });
       void queryClient.invalidateQueries({ queryKey: ["sports"] });
       void queryClient.invalidateQueries({ queryKey: ["venues"] });
@@ -241,6 +250,7 @@ export function AdminOrganizationPage() {
       setLogoUrl(settings.logo_url ?? "");
       setError(null);
       setSuccess("Logo actualizado correctamente.");
+      void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization-settings"] });
       void queryClient.invalidateQueries({ queryKey: ["request-organization-context"] });
     },
@@ -354,7 +364,12 @@ export function AdminOrganizationPage() {
 
   const effectiveLogoPreview = logoPreviewUrl || logoUrl || null;
 
-  if (organizationQuery.isLoading || settingsQuery.isLoading || organizationSportsQuery.isLoading) {
+  if (
+    organizationQuery.isLoading ||
+    settingsQuery.isLoading ||
+    organizationSportsQuery.isLoading ||
+    readinessQuery.isLoading
+  ) {
     return (
       <>
         <AppHeader />
@@ -374,6 +389,76 @@ export function AdminOrganizationPage() {
           title="Perfil e identidad del complejo"
           description="Definí cómo se presenta este complejo dentro de la plataforma, qué deportes ofrece y cuál es su política general antes de bajar al detalle por disciplina."
         />
+
+        {readinessQuery.data ? (
+          <div className="shell-card space-y-5 p-6" data-tour="org-readiness">
+            <div className="flex items-center gap-3">
+              <div
+                className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
+                  readinessQuery.data.summary.is_ready ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {readinessQuery.data.summary.is_ready ? <CircleCheckBig size={20} /> : <CircleAlert size={20} />}
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-950">Checklist operativo</h3>
+                <p className="text-sm text-slate-500">
+                  Estado real del complejo para salir a operación con branding, oferta y notificaciones.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[0.72fr_1.28fr]">
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Readiness</p>
+                <p className="mt-3 text-4xl font-black text-slate-950">{readinessQuery.data.summary.readiness_percent}%</p>
+                <p className="mt-2 text-sm text-slate-500">
+                  {readinessQuery.data.summary.completed_items} de {readinessQuery.data.summary.total_items} puntos completos.
+                </p>
+                <div
+                  className={`mt-4 rounded-2xl px-4 py-3 text-sm font-semibold ${
+                    readinessQuery.data.summary.is_ready ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {readinessQuery.data.summary.is_ready ? "Complejo listo para operar." : "Todavía faltan pasos antes de salir."}
+                </div>
+                {readinessQuery.data.summary.missing_items.length ? (
+                  <div className="mt-4">
+                    <p className="text-sm font-semibold text-slate-900">Pendiente</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
+                      {readinessQuery.data.summary.missing_items.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {readinessQuery.data.items.map((item) => (
+                  <div
+                    key={item.key}
+                    className={`rounded-3xl border p-4 ${
+                      item.ready ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-semibold text-slate-950">{item.label}</p>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          item.ready ? "bg-white text-emerald-700" : "bg-white text-amber-700"
+                        }`}
+                      >
+                        {item.ready ? "OK" : "Falta"}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
           <form className="shell-card space-y-5 p-6" onSubmit={handleOrganizationSubmit} data-tour="org-profile">
