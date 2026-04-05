@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -21,18 +21,51 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 DEFAULT_ORGANIZATION_SLUG = "complejo-demo"
+TENANT_MISMATCH_DETAIL = "Esta cuenta pertenece a otro complejo"
+ORGANIZATION_NOT_FOUND_DETAIL = "Complejo no encontrado"
 
 
 def get_default_organization(db: Session) -> Organization:
     organization = db.query(Organization).filter(Organization.slug == DEFAULT_ORGANIZATION_SLUG).first()
-    if not organization:
-        organization = db.query(Organization).order_by(Organization.created_at.asc()).first()
     if not organization:
         organization = Organization(name="Complejo Demo", slug=DEFAULT_ORGANIZATION_SLUG, is_active=True)
         db.add(organization)
         db.commit()
         db.refresh(organization)
     return organization
+
+
+def get_organization_by_slug(db: Session, slug: str | None) -> Organization | None:
+    normalized = (slug or "").strip().lower()
+    if not normalized:
+        return None
+    return db.query(Organization).filter(Organization.slug == normalized).first()
+
+
+def get_requested_organization_slug_from_request(request: Request) -> str | None:
+    requested_slug = request.headers.get("X-Organization-Slug")
+    normalized = (requested_slug or "").strip().lower()
+    return normalized or None
+
+
+def require_request_organization_from_request(db: Session, request: Request) -> Organization:
+    requested_slug = get_requested_organization_slug_from_request(request)
+    if not requested_slug:
+        return get_default_organization(db)
+
+    requested_organization = get_organization_by_slug(db, requested_slug)
+    if not requested_organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+
+    return requested_organization
+
+
+def get_request_organization_from_request(db: Session, request: Request) -> Organization:
+    requested_slug = get_requested_organization_slug_from_request(request)
+    requested_organization = get_organization_by_slug(db, requested_slug)
+    if requested_organization:
+        return requested_organization
+    return get_default_organization(db)
 
 
 def ensure_user_organization(db: Session, user: User) -> User:
@@ -75,22 +108,21 @@ def get_current_user_from_token(token: str, db: Session) -> User:
 
 
 @router.post("/register", response_model=UserPublic, status_code=201)
-def register(payload: UserCreate, db: Session = Depends(get_db)):
+def register(payload: UserCreate, request: Request, db: Session = Depends(get_db)):
     exists = db.query(User).filter(User.email == payload.email).first()
     if exists:
         raise HTTPException(status_code=409, detail="Email ya registrado")
 
     whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
     whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
-
-    default_organization = get_default_organization(db)
+    target_organization = get_request_organization_from_request(db, request)
 
     user = User(
         email=payload.email,
         full_name=payload.full_name,
         hashed_password=get_password_hash(payload.password),
         role="user",
-        organization_id=default_organization.id,
+        organization_id=target_organization.id,
         whatsapp_number=whatsapp_number,
         whatsapp_opt_in=whatsapp_opt_in,
     )
@@ -101,11 +133,15 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenPair)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = None, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == form.username).first()
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
+
     user = ensure_user_organization(db, user)
+    requested_organization = get_request_organization_from_request(db, request)
+    if user.organization_id != requested_organization.id:
+        raise HTTPException(status_code=403, detail=TENANT_MISMATCH_DETAIL)
 
     access = create_access_token(
         subject=str(user.id),

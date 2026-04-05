@@ -24,11 +24,14 @@ import { api, type BookingPolicy, type TimeSlot } from "../lib/api";
 import { showTimedSuccess } from "../lib/dialog";
 import { currency, dateInputDefault, dateLabel, localDateBounds, timeZoneSummary } from "../lib/format";
 import { useSessionTour } from "../lib/session-tour";
+import { useTenantPath, useTenantSlug } from "../lib/tenant";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function ExplorePage() {
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
+  const tenantSlug = useTenantSlug();
+  const tenantPath = useTenantPath();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedDate, setSelectedDate] = useState(dateInputDefault);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -38,23 +41,23 @@ export function ExplorePage() {
   const selectedVenueId = searchParams.get("venue");
   const selectedCourtId = searchParams.get("court");
 
-  const sportsQuery = useQuery({ queryKey: ["sports"], queryFn: api.listSports });
+  const sportsQuery = useQuery({ queryKey: ["sports", tenantSlug ?? "default"], queryFn: api.listSports });
   const policiesQuery = useQuery({
-    queryKey: ["booking-policies", selectedSportId],
+    queryKey: ["booking-policies", tenantSlug ?? "default", selectedSportId],
     queryFn: () => api.listBookingPolicies(selectedSportId),
   });
   const venuesQuery = useQuery({
-    queryKey: ["venues", selectedSportId],
+    queryKey: ["venues", tenantSlug ?? "default", selectedSportId],
     queryFn: () => api.listVenues(selectedSportId),
     enabled: Boolean(sportsQuery.data),
   });
   const courtsQuery = useQuery({
-    queryKey: ["courts", selectedVenueId, selectedSportId],
+    queryKey: ["courts", tenantSlug ?? "default", selectedVenueId, selectedSportId],
     queryFn: () => api.listCourts({ venueId: selectedVenueId, sportId: selectedSportId }),
     enabled: Boolean(selectedVenueId || selectedSportId),
   });
   const timeslotsQuery = useQuery({
-    queryKey: ["timeslots", selectedCourtId, selectedDate],
+    queryKey: ["timeslots", tenantSlug ?? "default", selectedCourtId, selectedDate],
     queryFn: () =>
       api.listTimeslots({
         courtId: selectedCourtId,
@@ -392,7 +395,7 @@ export function ExplorePage() {
                                 {bookingPending ? "Reservando..." : isBookable ? "Reservar" : buttonLabel(slot)}
                               </button>
                             ) : (
-                              <Link className="btn-secondary" to="/login">
+                              <Link className="btn-secondary" to={tenantPath("/login")}>
                                 Ingresá para reservar
                               </Link>
                             )}

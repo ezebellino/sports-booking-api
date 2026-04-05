@@ -49,7 +49,7 @@ export function AcceptInvitePage() {
     setSubmitError(null);
 
     if (!token) {
-      setSubmitError("El link de invitaci\u00f3n no es v\u00e1lido.");
+      setSubmitError("El link de invitación no es válido.");
       return;
     }
 
@@ -68,7 +68,7 @@ export function AcceptInvitePage() {
       });
       navigate("/explore");
     } catch (submissionError) {
-      setSubmitError(submissionError instanceof Error ? submissionError.message : "No pudimos aceptar la invitaci\u00f3n.");
+      setSubmitError(submissionError instanceof Error ? submissionError.message : "No pudimos aceptar la invitación.");
     } finally {
       setLoading(false);
     }
@@ -79,14 +79,13 @@ export function AcceptInvitePage() {
       <AppHeader />
       <section className="mx-auto grid w-full max-w-5xl gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="shell-card p-6 sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-skyline">Invitaci\u00f3n de staff</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-skyline">Invitación de staff</p>
           <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">Sumate a un complejo ya configurado</h2>
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            Este alta crea tu cuenta dentro del complejo que te invit\u00f3. Despu\u00e9s vas a entrar con tu propio
-            usuario y permisos.
+            Este alta crea tu cuenta dentro del complejo que te invitó. Después vas a entrar con tu propio usuario y permisos.
           </p>
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            {token ? "El link de invitaci\u00f3n est\u00e1 listo para activarse." : "Falta el token de invitaci\u00f3n en el link."}
+            {token ? "El link de invitación está listo para activarse." : "Falta el token de invitación en el link."}
           </div>
         </div>
 
@@ -107,7 +106,7 @@ export function AcceptInvitePage() {
 
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="invite-password">
-              Contrase\u00f1a
+              Contraseña
             </label>
             <input
               id="invite-password"
@@ -156,12 +155,12 @@ export function AcceptInvitePage() {
                 Activando acceso...
               </span>
             ) : (
-              "Aceptar invitaci\u00f3n"
+              "Aceptar invitación"
             )}
           </button>
 
           <p className="text-center text-sm text-slate-500">
-            \u00bfYa ten\u00e9s una cuenta?{" "}
+            ¿Ya tenés una cuenta?{" "}
             <Link className="font-semibold text-slate-900" to="/login">
               Ingresar
             </Link>

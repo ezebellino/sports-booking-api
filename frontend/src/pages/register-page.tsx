@@ -4,6 +4,8 @@ import { CircleAlert, LoaderCircle } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
 import { api } from "../lib/api";
+import { getBrandColor } from "../lib/branding";
+import { useTenantPath, useTenantSlug } from "../lib/tenant";
 import {
   normalizeEmail,
   normalizePhone,
@@ -24,9 +26,12 @@ type RegisterErrors = {
 export function RegisterPage() {
   const navigate = useNavigate();
   const { isAuthenticated, register } = useAuth();
+  const tenantSlug = useTenantSlug();
+  const tenantPath = useTenantPath();
   const contextQuery = useQuery({
-    queryKey: ["request-organization-context"],
+    queryKey: ["request-organization-context", tenantSlug ?? "default"],
     queryFn: api.getRequestOrganizationContext,
+    retry: false,
   });
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -37,7 +42,9 @@ export function RegisterPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const brandLabel = contextQuery.data?.branding_name ?? contextQuery.data?.organization.name ?? "el complejo";
+  const brandLabel =
+    contextQuery.data?.branding_name ?? contextQuery.data?.organization.name ?? "el complejo";
+  const primaryColor = getBrandColor(contextQuery.data?.primary_color);
 
   const helperText = useMemo(() => {
     if (loading) {
@@ -48,7 +55,7 @@ export function RegisterPage() {
   }, [brandLabel, loading]);
 
   if (isAuthenticated) {
-    return <Navigate to="/explore" replace />;
+    return <Navigate to={tenantPath("/explore")} replace />;
   }
 
   function clearFieldError(field: keyof RegisterErrors) {
@@ -86,9 +93,9 @@ export function RegisterPage() {
         whatsapp_number: normalizePhone(whatsappNumber) || null,
         whatsapp_opt_in: whatsappOptIn,
       });
-      navigate("/explore");
-    } catch (submitError) {
-      setSubmitError(submitError instanceof Error ? submitError.message : "No pudimos crear la cuenta.");
+      navigate(tenantPath("/explore"));
+    } catch (submissionError) {
+      setSubmitError(submissionError instanceof Error ? submissionError.message : "No pudimos crear la cuenta.");
     } finally {
       setLoading(false);
     }
@@ -99,12 +106,23 @@ export function RegisterPage() {
       <AppHeader />
       <section className="mx-auto grid w-full max-w-5xl gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="shell-card p-6 sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-skyline">Registro</p>
+          <p
+            className="text-xs font-semibold uppercase tracking-[0.2em] text-skyline"
+            style={primaryColor ? { color: primaryColor } : undefined}
+          >
+            Registro
+          </p>
           <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">Creá tu acceso</h2>
           <p className="mt-3 text-sm leading-6 text-slate-500">
             Registrate para reservar dentro de {brandLabel}. Después del alta vas a entrar automáticamente para llegar
             directo a explorar turnos.
           </p>
+          <div
+            className="mt-4 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]"
+            style={primaryColor ? { border: `1px solid ${primaryColor}`, color: primaryColor } : undefined}
+          >
+            Complejo: {brandLabel}
+          </div>
         </div>
 
         <form className="shell-card space-y-4 p-6 sm:p-8" onSubmit={handleSubmit} noValidate>
@@ -216,7 +234,7 @@ export function RegisterPage() {
 
           <p className="text-center text-sm text-slate-500">
             ¿Ya tenés usuario?{" "}
-            <Link className="font-semibold text-slate-900" to="/login">
+            <Link className="font-semibold text-slate-900" to={tenantPath("/login")}>
               Ingresar
             </Link>
           </p>

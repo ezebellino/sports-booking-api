@@ -1,7 +1,15 @@
-﻿from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.api.routes.auth import ensure_user_organization, get_default_organization, oauth2_optional, oauth2_scheme
+from app.api.routes.auth import (
+    ensure_user_organization,
+    get_default_organization,
+    get_request_organization_from_request,
+    get_requested_organization_slug_from_request,
+    oauth2_optional,
+    oauth2_scheme,
+    require_request_organization_from_request,
+)
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.organization import Organization
@@ -54,12 +62,20 @@ def get_current_organization(current_user: User = Depends(get_current_user), db:
 
 def get_request_organization(
     current_user: User | None = Depends(get_optional_current_user),
+    request: Request = None,
     db: Session = Depends(get_db),
 ) -> Organization:
     if current_user and current_user.organization_id:
         organization = db.get(Organization, current_user.organization_id)
         if organization:
             return organization
+
+    if request is not None and get_requested_organization_slug_from_request(request):
+        return require_request_organization_from_request(db, request)
+
+    if request is not None:
+        return get_request_organization_from_request(db, request)
+
     return get_default_organization(db)
 
 

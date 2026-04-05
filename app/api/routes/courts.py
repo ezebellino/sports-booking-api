@@ -26,6 +26,29 @@ COURT_DELETE_BLOCKED_BOOKINGS_DETAIL = "No se puede eliminar una cancha con rese
 VENUE_SPORT_MISMATCH_DETAIL = "La sede elegida solo permite otro deporte"
 
 
+def ensure_enabled_organization_sport(db: Session, organization_id, sport_id):
+    enabled = db.query(OrganizationSport).filter(
+        OrganizationSport.organization_id == organization_id,
+        OrganizationSport.sport_id == sport_id,
+        OrganizationSport.is_enabled.is_(True),
+    ).first()
+    if enabled:
+        return enabled
+
+    any_row_for_sport = db.query(OrganizationSport).filter(OrganizationSport.sport_id == sport_id).first()
+    if any_row_for_sport:
+        return None
+
+    enabled = OrganizationSport(
+        organization_id=organization_id,
+        sport_id=sport_id,
+        is_enabled=True,
+    )
+    db.add(enabled)
+    db.flush()
+    return enabled
+
+
 @router.post("", response_model=CourtPublic, status_code=201)
 def create_court(
     payload: CourtCreate,
@@ -37,11 +60,11 @@ def create_court(
         raise HTTPException(status_code=400, detail=VENUE_NOT_FOUND_DETAIL)
     if not db.get(Sport, payload.sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
-    enabled = db.query(OrganizationSport).filter(
-        OrganizationSport.organization_id == current_admin.organization_id,
-        OrganizationSport.sport_id == payload.sport_id,
-        OrganizationSport.is_enabled.is_(True),
-    ).first()
+    enabled = ensure_enabled_organization_sport(
+        db,
+        current_admin.organization_id,
+        payload.sport_id,
+    )
     if not enabled:
         raise HTTPException(status_code=400, detail=SPORT_NOT_ENABLED_DETAIL)
     if venue.allowed_sport_id and venue.allowed_sport_id != payload.sport_id:
@@ -97,11 +120,11 @@ def update_court(
         raise HTTPException(status_code=400, detail=VENUE_NOT_FOUND_DETAIL)
     if not db.get(Sport, next_sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
-    enabled = db.query(OrganizationSport).filter(
-        OrganizationSport.organization_id == current_admin.organization_id,
-        OrganizationSport.sport_id == next_sport_id,
-        OrganizationSport.is_enabled.is_(True),
-    ).first()
+    enabled = ensure_enabled_organization_sport(
+        db,
+        current_admin.organization_id,
+        next_sport_id,
+    )
     if not enabled:
         raise HTTPException(status_code=400, detail=SPORT_NOT_ENABLED_DETAIL)
     if venue.allowed_sport_id and venue.allowed_sport_id != next_sport_id:

@@ -5,15 +5,19 @@ import { AppHeader } from "../components/app-header";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api } from "../lib/api";
+import { getBrandColor } from "../lib/branding";
 import { useSessionTour } from "../lib/session-tour";
+import { useTenantPath, useTenantSlug } from "../lib/tenant";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function HomePage() {
   const { canAccessAdmin, isAuthenticated, isAdmin, user } = useAuth();
-  const sportsQuery = useQuery({ queryKey: ["sports"], queryFn: api.listSports });
-  const venuesQuery = useQuery({ queryKey: ["venues"], queryFn: () => api.listVenues(null) });
+  const tenantPath = useTenantPath();
+  const tenantSlug = useTenantSlug();
+  const sportsQuery = useQuery({ queryKey: ["sports", tenantSlug ?? "default"], queryFn: api.listSports });
+  const venuesQuery = useQuery({ queryKey: ["venues", tenantSlug ?? "default"], queryFn: () => api.listVenues(null) });
   const contextQuery = useQuery({
-    queryKey: ["request-organization-context"],
+    queryKey: ["request-organization-context", tenantSlug ?? "default"],
     queryFn: api.getRequestOrganizationContext,
   });
   const organizationLabel =
@@ -21,6 +25,7 @@ export function HomePage() {
     contextQuery.data?.branding_name ??
     contextQuery.data?.organization.name ??
     "Complejo Demo";
+  const primaryColor = getBrandColor(contextQuery.data?.primary_color);
 
   useSessionTour({
     sessionKey: `tour:home:${isAuthenticated ? user?.role ?? "auth" : "guest"}`,
@@ -56,9 +61,19 @@ export function HomePage() {
 
       <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="shell-card overflow-hidden p-6 sm:p-8">
-          <div className="inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-orange-700">
+          <div
+            className="inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-orange-700"
+            style={
+              primaryColor
+                ? {
+                    border: `1px solid ${primaryColor}`,
+                    color: primaryColor,
+                  }
+                : undefined
+            }
+          >
             <Sparkles size={14} />
-            Sports booking listo para operar
+            {organizationLabel} listo para operar
           </div>
           <h2 className="mt-5 max-w-xl text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
             Reservá una cancha en pocos toques, con un flujo claro de punta a punta.
@@ -69,17 +84,27 @@ export function HomePage() {
             además tenés herramientas para generar y editar bloques completos de horarios.
           </p>
           {isAuthenticated ? (
-            <div className="mt-4 inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
+            <div
+              className="mt-4 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]"
+              style={
+                primaryColor
+                  ? {
+                      border: `1px solid ${primaryColor}`,
+                      color: primaryColor,
+                    }
+                  : undefined
+              }
+            >
               Complejo activo: {organizationLabel}
             </div>
           ) : null}
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row" data-tour="home-primary-action">
-            <Link className="btn-primary" to="/explore">
+            <Link className="btn-primary" to={tenantPath("/explore")}>
               Empezar a explorar
               <ArrowRight className="ml-2" size={16} />
             </Link>
-            <Link className="btn-secondary" to={isAuthenticated ? "/bookings" : "/login"}>
+            <Link className="btn-secondary" to={isAuthenticated ? tenantPath("/bookings") : tenantPath("/login")}>
               {isAuthenticated ? "Ver mis reservas" : "Ingresar"}
             </Link>
           </div>
@@ -100,7 +125,7 @@ export function HomePage() {
               <h3 className="mt-2 text-xl font-bold text-slate-950">Accesos rápidos</h3>
               <div className="mt-4 flex flex-wrap gap-2">
                 {sportsQuery.data?.slice(0, 6).map((sport) => (
-                  <Link key={sport.id} to={`/explore?sport=${sport.id}`} className="chip hover:border-slate-300">
+                  <Link key={sport.id} to={`${tenantPath("/explore")}?sport=${sport.id}`} className="chip hover:border-slate-300">
                     {sport.name}
                   </Link>
                 ))}

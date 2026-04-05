@@ -1874,6 +1874,16 @@ def test_public_request_context_exposes_branding_for_current_complex(client):
     assert payload["primary_color"] == "#112233"
 
 
+def test_public_request_context_returns_404_for_unknown_slug(client):
+    response = client.get(
+        "/organizations/request-context",
+        headers={"X-Organization-Slug": "slug-inexistente"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Complejo no encontrado"
+
+
 def test_onboarding_creates_organization_settings_row(client, db_session):
     response = client.post(
         "/organizations/onboard",
@@ -2158,6 +2168,84 @@ def test_admin_can_cancel_pending_staff_invitation(client, db_session):
     )
     assert pending_list_response.status_code == 200
     assert pending_list_response.json() == []
+
+
+def test_register_uses_requested_public_organization_slug(client, db_session):
+    onboarding_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "BlackPadel",
+            "organization_slug": "blackpadel",
+            "admin_full_name": "Black Admin",
+            "admin_email": "black-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboarding_response.status_code == 201
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": "jugador@blackpadel.com",
+            "full_name": "Jugador BlackPadel",
+            "password": "password123",
+        },
+        headers={"X-Organization-Slug": "blackpadel"},
+    )
+
+    assert register_response.status_code == 201
+    payload = register_response.json()
+    assert payload["organization_slug"] == "blackpadel"
+    assert payload["organization_name"] == "BlackPadel"
+
+
+def test_login_rejects_user_from_another_public_organization_slug(client):
+    onboard_a = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Tenant A",
+            "organization_slug": "tenant-a",
+            "admin_full_name": "Admin A",
+            "admin_email": "admin-a@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    onboard_b = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Tenant B",
+            "organization_slug": "tenant-b",
+            "admin_full_name": "Admin B",
+            "admin_email": "admin-b@saas.com",
+            "admin_password": "password123",
+        },
+    )
+
+    assert onboard_a.status_code == 201
+    assert onboard_b.status_code == 201
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": "usuario-a@saas.com",
+            "full_name": "Usuario A",
+            "password": "password123",
+        },
+        headers={"X-Organization-Slug": "tenant-a"},
+    )
+    assert register_response.status_code == 201
+
+    login_response = client.post(
+        "/auth/login",
+        data={
+            "username": "usuario-a@saas.com",
+            "password": "password123",
+        },
+        headers={"X-Organization-Slug": "tenant-b"},
+    )
+
+    assert login_response.status_code == 403
+    assert login_response.json()["detail"] == "Esta cuenta pertenece a otro complejo"
 
 
 def test_booking_policies_use_organization_defaults_when_sport_has_no_override(client):

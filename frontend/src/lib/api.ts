@@ -1,4 +1,5 @@
 ﻿import { clearTokens, getStoredTokens, storeTokens } from "./storage";
+import { detectTenantSlugFromPath } from "./tenant";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
 
@@ -244,6 +245,43 @@ type RequestOptions = {
   retry?: boolean;
 };
 
+function resolveAssetUrl(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  try {
+    return new URL(value, API_URL).toString();
+  } catch {
+    return value;
+  }
+}
+
+function normalizeOrganizationRequestContext(payload: OrganizationRequestContext): OrganizationRequestContext {
+  return {
+    ...payload,
+    logo_url: resolveAssetUrl(payload.logo_url),
+  };
+}
+
+function normalizeOrganizationSettings(payload: OrganizationSettings): OrganizationSettings {
+  return {
+    ...payload,
+    logo_url: resolveAssetUrl(payload.logo_url),
+  };
+}
+
+function getTenantSlugHeader() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return detectTenantSlugFromPath(window.location.pathname);
+}
+
 async function refreshAccessToken() {
   const stored = getStoredTokens();
 
@@ -283,6 +321,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
+  }
+
+  const tenantSlug = getTenantSlugHeader();
+  if (tenantSlug && !headers.has("X-Organization-Slug")) {
+    headers.set("X-Organization-Slug", tenantSlug);
   }
 
   if (auth) {
@@ -374,7 +417,8 @@ export const api = {
 
   getCurrentOrganization: () => request<Organization>("/organizations/current", { auth: true }),
 
-  getRequestOrganizationContext: () => request<OrganizationRequestContext>("/organizations/request-context"),
+  getRequestOrganizationContext: async () =>
+    normalizeOrganizationRequestContext(await request<OrganizationRequestContext>("/organizations/request-context")),
 
   updateCurrentOrganization: (input: { name?: string; slug?: string; is_active?: boolean }) =>
     request<Organization>("/organizations/current", {
@@ -384,8 +428,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  getCurrentOrganizationSettings: () =>
-    request<OrganizationSettings>("/organizations/current/settings", { auth: true }),
+  getCurrentOrganizationSettings: async () =>
+    normalizeOrganizationSettings(await request<OrganizationSettings>("/organizations/current/settings", { auth: true })),
 
   updateCurrentOrganizationSettings: (input: {
     branding_name?: string | null;
@@ -408,14 +452,16 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  uploadCurrentOrganizationLogo: (file: File) => {
+  uploadCurrentOrganizationLogo: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return request<OrganizationSettings>("/organizations/current/logo", {
+    return normalizeOrganizationSettings(
+      await request<OrganizationSettings>("/organizations/current/logo", {
       method: "POST",
       auth: true,
       body: formData,
-    });
+      }),
+    );
   },
 
   listStaffInvitations: () =>
