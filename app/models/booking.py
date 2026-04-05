@@ -15,6 +15,7 @@ class Booking(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
+    organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     timeslot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("timeslots.id", ondelete="CASCADE"), nullable=False)
 
@@ -24,3 +25,4 @@ class Booking(Base):
 
     timeslot = relationship("TimeSlot", back_populates="bookings")
     user = relationship("User", back_populates="bookings")
+    organization = relationship("Organization", back_populates="bookings")

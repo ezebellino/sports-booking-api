@@ -1,0 +1,106 @@
+from pydantic import BaseModel
+
+
+class AdminMetricsBucket(BaseModel):
+    name: str
+    total_timeslots: int
+    active_timeslots: int
+    confirmed_bookings: int
+    cancelled_bookings: int
+    spots_total: int
+    spots_filled: int
+    occupancy_rate: float
+    cancellation_rate: float
+    estimated_revenue: float
+
+
+class AdminMetricsSummary(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+    total_timeslots: int
+    active_timeslots: int
+    upcoming_timeslots: int
+    confirmed_bookings: int
+    cancelled_bookings: int
+    spots_total: int
+    spots_filled: int
+    occupancy_rate: float
+    cancellation_rate: float
+    estimated_revenue: float
+
+
+class AdminMetricsPublic(BaseModel):
+    summary: AdminMetricsSummary
+    by_sport: list[AdminMetricsBucket]
+    by_venue: list[AdminMetricsBucket]
+
+
+class TenantIntegrityCounts(BaseModel):
+    organizations: int
+    users_without_organization: int
+    venues_without_organization: int
+    courts_without_organization: int
+    timeslots_without_organization: int
+    bookings_without_organization: int
+
+
+class TenantIntegrityIssues(BaseModel):
+    court_venue_mismatches: int
+    timeslot_court_mismatches: int
+    booking_user_mismatches: int
+    booking_timeslot_mismatches: int
+
+
+class TenantIntegrityPublic(BaseModel):
+    counts: TenantIntegrityCounts
+    issues: TenantIntegrityIssues
+    ready_for_not_null: bool
+
+
+class HolidayPublic(BaseModel):
+    date: str
+    local_name: str
+    name: str
+    country_code: str
+    global_holiday: bool
+    counties: list[str] | None = None
+    launch_year: int | None = None
+    types: list[str] = []
+
+
+class HolidayCalendarPublic(BaseModel):
+    country_code: str
+    year: int
+    month: int | None = None
+    holidays: list[HolidayPublic]
+
+
+class AdminReadinessItem(BaseModel):
+    key: str
+    label: str
+    ready: bool
+    detail: str
+
+
+class AdminReadinessSummary(BaseModel):
+    is_ready: bool
+    completed_items: int
+    total_items: int
+    readiness_percent: int
+    missing_items: list[str]
+
+
+class AdminReadinessPublic(BaseModel):
+    summary: AdminReadinessSummary
+    items: list[AdminReadinessItem]
+
+
+class AdminAuditEventPublic(BaseModel):
+    id: str
+    action: str
+    target_type: str
+    target_id: str | None = None
+    summary: str
+    actor_email: str
+    actor_name: str | None = None
+    created_at: str

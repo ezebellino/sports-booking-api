@@ -1,6 +1,8 @@
-from pydantic import BaseModel, field_validator
-from datetime import datetime
+﻿from datetime import datetime
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
 
 class TimeSlotCreate(BaseModel):
     court_id: UUID
@@ -28,6 +30,8 @@ class TimeSlotUpdate(BaseModel):
 
 
 class TimeSlotPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     court_id: UUID
     starts_at: datetime
@@ -35,3 +39,46 @@ class TimeSlotPublic(BaseModel):
     capacity: int
     price: float | None = None
     is_active: bool
+    confirmed_bookings: int = 0
+    remaining_spots: int = 0
+    availability_status: str = "available"
+    policy_summary: str | None = None
+
+
+class TimeSlotBulkCreate(BaseModel):
+    court_ids: list[UUID]
+    window_starts_at: datetime
+    window_ends_at: datetime
+    slot_minutes: int
+    capacity: int = 1
+    price: float | None = None
+    is_active: bool = True
+
+    @field_validator("court_ids")
+    @classmethod
+    def require_courts(cls, court_ids: list[UUID]):
+        if not court_ids:
+            raise ValueError("court_ids debe contener al menos una cancha")
+        return court_ids
+
+    @field_validator("window_ends_at")
+    @classmethod
+    def bulk_end_after_start(cls, window_ends_at: datetime, info):
+        window_starts_at = info.data.get("window_starts_at")
+        if window_starts_at and window_ends_at <= window_starts_at:
+            raise ValueError("window_ends_at debe ser posterior a window_starts_at")
+        return window_ends_at
+
+    @field_validator("slot_minutes")
+    @classmethod
+    def validate_slot_minutes(cls, slot_minutes: int):
+        if slot_minutes <= 0:
+            raise ValueError("slot_minutes debe ser mayor a 0")
+        return slot_minutes
+
+
+class TimeSlotBulkCreateResult(BaseModel):
+    created_count: int
+    skipped_count: int
+    created_slots: list[TimeSlotPublic]
+    skipped_reasons: list[str]

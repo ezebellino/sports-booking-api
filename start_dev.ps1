@@ -16,5 +16,5 @@ Set-Location "C:\ProjectsZeqe\sports-booking"
 docker compose up -d
 
 Write-Host "Iniciando backend..."
-& .\.venv\Scripts\activate
+& .\.venv313\Scripts\activate
 uvicorn app.main:app --reload

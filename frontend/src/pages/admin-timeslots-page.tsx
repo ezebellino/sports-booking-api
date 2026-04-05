@@ -1,0 +1,1063 @@
+﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  CalendarClock,
+  CircleAlert,
+  LoaderCircle,
+  PencilLine,
+  Plus,
+  Save,
+  Shield,
+  TimerReset,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AdminNav } from "../components/admin-nav";
+import { AppHeader } from "../components/app-header";
+import { EmptyState } from "../components/empty-state";
+import { LoadingCard } from "../components/loading-card";
+import { SectionTitle } from "../components/section-title";
+import { api, type TimeSlot } from "../lib/api";
+import {
+  dateInputDefault,
+  dateLabel,
+  localDateBounds,
+  timeOnlyLabel,
+  timeZoneSummary,
+} from "../lib/format";
+
+function toLocalDateTimeInput(iso: string) {
+  const date = new Date(iso);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function combineDateTime(date: string, time: string) {
+  return new Date(`${date}T${time}`).toISOString();
+}
+
+const weekdayOptions = [
+  { value: 0, label: "Lun" },
+  { value: 1, label: "Mar" },
+  { value: 2, label: "Mié" },
+  { value: 3, label: "Jue" },
+  { value: 4, label: "Vie" },
+  { value: 5, label: "Sáb" },
+  { value: 6, label: "Dom" },
+];
+
+function monthInputDefaultFromDate(dateValue: string) {
+  return dateValue.slice(0, 7);
+}
+
+function getMonthDateBounds(monthValue: string) {
+  const [year, month] = monthValue.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+  return {
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  };
+}
+
+function buildMonthlyScheduleDates(
+  monthValue: string,
+  weekdays: number[],
+  excludedDates: string[],
+) {
+  const [year, month] = monthValue.split("-").map(Number);
+  if (!year || !month) {
+    return [] as string[];
+  }
+
+  const excludedSet = new Set(excludedDates);
+  const selectedWeekdays = new Set(weekdays);
+  const dates: string[] = [];
+  const current = new Date(year, month - 1, 1);
+
+  while (current.getMonth() === month - 1) {
+    const weekday = (current.getDay() + 6) % 7;
+    const dateText = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+    if (selectedWeekdays.has(weekday) && !excludedSet.has(dateText)) {
+      dates.push(dateText);
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}
+
+type PreviewCourtStatus = {
+  courtId: string;
+  courtName: string;
+  exists: boolean;
+};
+
+type PreviewRow = {
+  startsAt: string;
+  endsAt: string;
+  createCount: number;
+  skippedCount: number;
+  courtStatuses: PreviewCourtStatus[];
+};
+
+export function AdminTimeslotsPage() {
+  const queryClient = useQueryClient();
+  const [selectedDate, setSelectedDate] = useState(dateInputDefault);
+  const [scheduleMode, setScheduleMode] = useState<"daily" | "monthly">("daily");
+  const [scheduleMonth, setScheduleMonth] = useState(() => monthInputDefaultFromDate(dateInputDefault()));
+  const [monthlyWeekdays, setMonthlyWeekdays] = useState<number[]>([0, 1, 2, 3, 4]);
+  const [holidayCountryCode, setHolidayCountryCode] = useState("AR");
+  const [excludedHolidayDates, setExcludedHolidayDates] = useState<string[]>([]);
+  const [filterSportId, setFilterSportId] = useState<string>("");
+  const [filterVenueId, setFilterVenueId] = useState<string>("");
+  const [filterCourtId, setFilterCourtId] = useState<string>("");
+  const [bulkCourtIds, setBulkCourtIds] = useState<string[]>([]);
+  const [windowStart, setWindowStart] = useState("09:00");
+  const [windowEnd, setWindowEnd] = useState("23:00");
+  const [slotMinutes, setSlotMinutes] = useState("60");
+  const [capacity, setCapacity] = useState("1");
+  const [price, setPrice] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
+  const [editingTimeSlotId, setEditingTimeSlotId] = useState<string | null>(null);
+  const [editStartsAt, setEditStartsAt] = useState("");
+  const [editEndsAt, setEditEndsAt] = useState("");
+  const [editCapacity, setEditCapacity] = useState("1");
+  const [editPrice, setEditPrice] = useState("");
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSuccess, setEditSuccess] = useState<string | null>(null);
+  const dayBounds = useMemo(() => localDateBounds(selectedDate), [selectedDate]);
+  const monthBounds = useMemo(() => getMonthDateBounds(scheduleMonth), [scheduleMonth]);
+
+  const sportsQuery = useQuery({
+    queryKey: ["sports"],
+    queryFn: api.listSports,
+  });
+
+  const activePolicyQuery = useQuery({
+    queryKey: ["booking-policies", filterSportId || "general"],
+    queryFn: () => api.listBookingPolicies(filterSportId || null),
+  });
+
+  const holidaysQuery = useQuery({
+    queryKey: ["admin-holidays", scheduleMonth, holidayCountryCode],
+    queryFn: () => {
+      const [year, month] = scheduleMonth.split("-").map(Number);
+      return api.getAdminHolidays({ year, month, countryCode: holidayCountryCode });
+    },
+    enabled: scheduleMode === "monthly" && Boolean(scheduleMonth),
+  });
+
+  const venuesQuery = useQuery({
+    queryKey: ["venues", "timeslots-admin"],
+    queryFn: () => api.listVenues(null),
+  });
+
+  const courtsQuery = useQuery({
+    queryKey: ["courts", "all-admin"],
+    queryFn: () => api.listCourts({}),
+  });
+
+  const timeslotsQuery = useQuery({
+    queryKey: ["admin-timeslots", selectedDate],
+    queryFn: () =>
+      api.listTimeslots({
+        dateFrom: dayBounds.startIso,
+        dateTo: dayBounds.endIso,
+      }),
+  });
+
+  const existingDayTimeslotsQuery = useQuery({
+    queryKey: ["admin-timeslots-preview", scheduleMode, selectedDate, scheduleMonth],
+    queryFn: () =>
+      api.listTimeslots({
+        dateFrom: scheduleMode === "monthly" ? monthBounds.startIso : dayBounds.startIso,
+        dateTo: scheduleMode === "monthly" ? monthBounds.endIso : dayBounds.endIso,
+      }),
+  });
+
+  const sportsById = useMemo(
+    () => new Map((sportsQuery.data ?? []).map((sport) => [sport.id, sport])),
+    [sportsQuery.data],
+  );
+  const venuesById = useMemo(
+    () => new Map((venuesQuery.data ?? []).map((venue) => [venue.id, venue])),
+    [venuesQuery.data],
+  );
+  const courtsById = useMemo(
+    () => new Map((courtsQuery.data ?? []).map((court) => [court.id, court])),
+    [courtsQuery.data],
+  );
+
+  const filteredVenues = useMemo(() => {
+    return (venuesQuery.data ?? []).filter((venue) => {
+      if (!filterSportId) {
+        return true;
+      }
+      return !venue.allowed_sport_id || venue.allowed_sport_id === filterSportId;
+    });
+  }, [filterSportId, venuesQuery.data]);
+
+  const filteredCourts = useMemo(() => {
+    return (courtsQuery.data ?? []).filter((court) => {
+      if (filterSportId && court.sport_id !== filterSportId) {
+        return false;
+      }
+      if (filterVenueId && court.venue_id !== filterVenueId) {
+        return false;
+      }
+      return true;
+    });
+  }, [courtsQuery.data, filterSportId, filterVenueId]);
+
+  useEffect(() => {
+    if (filterVenueId && !filteredVenues.some((venue) => venue.id === filterVenueId)) {
+      setFilterVenueId("");
+    }
+  }, [filterVenueId, filteredVenues]);
+
+  useEffect(() => {
+    if (!holidaysQuery.data) {
+      return;
+    }
+    setExcludedHolidayDates((current) => {
+      if (current.length) {
+        return current.filter((date) => holidaysQuery.data?.holidays.some((holiday) => holiday.date === date));
+      }
+      return holidaysQuery.data.holidays.map((holiday) => holiday.date);
+    });
+  }, [holidaysQuery.data]);
+
+  useEffect(() => {
+    if (filterCourtId && !filteredCourts.some((court) => court.id === filterCourtId)) {
+      setFilterCourtId("");
+    }
+
+    setBulkCourtIds((current) =>
+      current.filter((courtId) => filteredCourts.some((court) => court.id === courtId)),
+    );
+  }, [filterCourtId, filteredCourts]);
+
+  const previewSlots = useMemo(() => {
+    const parsedSlotMinutes = Number(slotMinutes);
+    const scheduleDates =
+      scheduleMode === "monthly"
+        ? buildMonthlyScheduleDates(scheduleMonth, monthlyWeekdays, excludedHolidayDates)
+        : [selectedDate];
+
+    if (!scheduleDates.length || !windowStart || !windowEnd || !Number.isFinite(parsedSlotMinutes) || parsedSlotMinutes <= 0) {
+      return [] as Array<{ startsAt: string; endsAt: string }>;
+    }
+
+    const slots: Array<{ startsAt: string; endsAt: string }> = [];
+
+    for (const dateValue of scheduleDates) {
+      const start = new Date(`${dateValue}T${windowStart}`);
+      const endLimit = new Date(`${dateValue}T${windowEnd}`);
+
+      if (Number.isNaN(start.getTime()) || Number.isNaN(endLimit.getTime()) || start >= endLimit) {
+        continue;
+      }
+
+      let currentStart = new Date(start);
+      while (currentStart < endLimit) {
+        const currentEnd = new Date(currentStart.getTime() + parsedSlotMinutes * 60_000);
+        slots.push({
+          startsAt: currentStart.toISOString(),
+          endsAt: currentEnd.toISOString(),
+        });
+        currentStart = currentEnd;
+      }
+    }
+
+    return slots;
+  }, [excludedHolidayDates, monthlyWeekdays, scheduleMode, scheduleMonth, selectedDate, slotMinutes, windowEnd, windowStart]);
+
+  const previewSummary = useMemo(() => {
+    const selectedCourtSet = new Set(bulkCourtIds);
+    const existingKeys = new Set(
+      (existingDayTimeslotsQuery.data ?? [])
+        .filter((timeslot) => selectedCourtSet.has(timeslot.court_id))
+        .map((timeslot) => `${timeslot.court_id}|${timeslot.starts_at}|${timeslot.ends_at}`),
+    );
+
+    const rows: PreviewRow[] = previewSlots.map((slot) => {
+      const courtStatuses = bulkCourtIds.map((courtId) => {
+        const key = `${courtId}|${slot.startsAt}|${slot.endsAt}`;
+        const courtName = courtsById.get(courtId)?.name ?? "Cancha";
+        return {
+          courtId,
+          courtName,
+          exists: existingKeys.has(key),
+        };
+      });
+
+      const skippedCount = courtStatuses.filter((courtStatus) => courtStatus.exists).length;
+      const createCount = courtStatuses.length - skippedCount;
+
+      return {
+        ...slot,
+        createCount,
+        skippedCount,
+        courtStatuses,
+      };
+    });
+
+    const totalCreateCount = rows.reduce((sum, row) => sum + row.createCount, 0);
+    const totalSkippedCount = rows.reduce((sum, row) => sum + row.skippedCount, 0);
+    const crossesMidnight = rows.some(
+      (row) => new Date(row.endsAt).toISOString().slice(0, 10) !== new Date(row.startsAt).toISOString().slice(0, 10),
+    );
+    const uniqueDates = Array.from(new Set(rows.map((row) => new Date(row.startsAt).toISOString().slice(0, 10))));
+
+    return {
+      rows,
+      totalCreateCount,
+      totalSkippedCount,
+      crossesMidnight,
+      uniqueDates,
+    };
+  }, [bulkCourtIds, courtsById, existingDayTimeslotsQuery.data, previewSlots]);
+
+  const selectedVenue = filterVenueId ? venuesById.get(filterVenueId) ?? null : null;
+
+  const selectedBulkTimezones = useMemo(() => {
+    return Array.from(
+      new Set(
+        bulkCourtIds
+          .map((courtId) => courtsById.get(courtId))
+          .map((court) => (court ? venuesById.get(court.venue_id)?.timezone ?? null : null))
+          .filter((timezone): timezone is string => Boolean(timezone)),
+      ),
+    );
+  }, [bulkCourtIds, courtsById, venuesById]);
+
+  const previewTimeZone = selectedBulkTimezones.length === 1 ? selectedBulkTimezones[0] : null;
+
+  const selectedBulkSports = useMemo(() => {
+    return Array.from(
+      new Map(
+        bulkCourtIds
+          .map((courtId) => courtsById.get(courtId))
+          .map((court) => (court ? sportsById.get(court.sport_id) ?? null : null))
+          .filter((sport): sport is NonNullable<typeof sport> => Boolean(sport))
+          .map((sport) => [sport.id, sport]),
+      ).values(),
+    );
+  }, [bulkCourtIds, courtsById, sportsById]);
+
+  const bulkPolicyRows = useMemo(() => {
+    const fallback = activePolicyQuery.data;
+    return selectedBulkSports.map((sport) => ({
+      sportId: sport.id,
+      label: `${sport.name}: reserva con ${sport.booking_min_lead_minutes ?? fallback?.min_booking_lead_minutes ?? 0} min y cancelación con ${sport.cancellation_min_lead_minutes ?? fallback?.cancellation_min_lead_minutes ?? 0} min.`,
+      usesDefault: sport.booking_min_lead_minutes === null && sport.cancellation_min_lead_minutes === null,
+    }));
+  }, [activePolicyQuery.data, selectedBulkSports]);
+
+  const visibleTimeslots = useMemo(() => {
+    const allowedCourtIds = new Set(filteredCourts.map((court) => court.id));
+
+    return (timeslotsQuery.data ?? []).filter((timeslot) => {
+      if (!allowedCourtIds.has(timeslot.court_id)) {
+        return false;
+      }
+      if (filterCourtId && timeslot.court_id !== filterCourtId) {
+        return false;
+      }
+      return true;
+    });
+  }, [filterCourtId, filteredCourts, timeslotsQuery.data]);
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: async (input: {
+      mode: "daily" | "monthly";
+      court_ids: string[];
+      window_starts_at: string;
+      window_ends_at: string;
+      slot_minutes: number;
+      capacity: number;
+      price: number | null;
+      is_active: boolean;
+      dates?: string[];
+    }) => {
+      if (input.mode === "daily") {
+        return api.bulkCreateTimeslots(input);
+      }
+
+      const dates = input.dates ?? [];
+      let createdCount = 0;
+      let skippedCount = 0;
+      const createdSlots: TimeSlot[] = [];
+      const skippedReasons: string[] = [];
+
+      for (const dateValue of dates) {
+        const result = await api.bulkCreateTimeslots({
+          court_ids: input.court_ids,
+          window_starts_at: combineDateTime(dateValue, windowStart),
+          window_ends_at: combineDateTime(dateValue, windowEnd),
+          slot_minutes: input.slot_minutes,
+          capacity: input.capacity,
+          price: input.price,
+          is_active: input.is_active,
+        });
+        createdCount += result.created_count;
+        skippedCount += result.skipped_count;
+        createdSlots.push(...result.created_slots);
+        skippedReasons.push(...result.skipped_reasons);
+      }
+
+      return {
+        created_count: createdCount,
+        skipped_count: skippedCount,
+        created_slots: createdSlots,
+        skipped_reasons: skippedReasons,
+      };
+    },
+    onSuccess: (result) => {
+      setBulkError(null);
+      setEditSuccess(null);
+      setBulkSuccess(`Se crearon ${result.created_count} turnos y se omitieron ${result.skipped_count}.`);
+      void queryClient.invalidateQueries({ queryKey: ["admin-timeslots"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-timeslots-preview"] });
+      void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+    },
+    onError: (error) => {
+      setBulkSuccess(null);
+      setBulkError(error instanceof Error ? error.message : "No pudimos crear los turnos.");
+    },
+  });
+
+  const updateTimeSlotMutation = useMutation({
+    mutationFn: ({ timeslotId, payload }: { timeslotId: string; payload: Parameters<typeof api.updateTimeslot>[1] }) =>
+      api.updateTimeslot(timeslotId, payload),
+    onSuccess: () => {
+      setEditError(null);
+      setBulkSuccess(null);
+      setEditSuccess("Turno actualizado correctamente.");
+      void queryClient.invalidateQueries({ queryKey: ["admin-timeslots"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-timeslots-preview"] });
+      void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+      setEditingTimeSlotId(null);
+    },
+    onError: (error) => {
+      setEditSuccess(null);
+      setEditError(error instanceof Error ? error.message : "No pudimos actualizar el turno.");
+    },
+  });
+
+  function toggleCourt(courtId: string) {
+    setBulkCourtIds((current) =>
+      current.includes(courtId) ? current.filter((id) => id !== courtId) : [...current, courtId],
+    );
+  }
+
+  function toggleWeekday(weekday: number) {
+    setMonthlyWeekdays((current) =>
+      current.includes(weekday) ? current.filter((value) => value !== weekday) : [...current, weekday].sort((a, b) => a - b),
+    );
+  }
+
+  function toggleHolidayDate(dateValue: string) {
+    setExcludedHolidayDates((current) =>
+      current.includes(dateValue) ? current.filter((value) => value !== dateValue) : [...current, dateValue].sort(),
+    );
+  }
+
+  function handleBulkSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBulkError(null);
+    setBulkSuccess(null);
+
+    if (!bulkCourtIds.length) {
+      setBulkError("Seleccioná al menos una cancha.");
+      return;
+    }
+
+    const parsedSlotMinutes = Number(slotMinutes);
+    const parsedCapacity = Number(capacity);
+
+    if (!Number.isFinite(parsedSlotMinutes) || parsedSlotMinutes <= 0) {
+      setBulkError("La duración del turno debe ser mayor a 0 minutos.");
+      return;
+    }
+
+    if (!Number.isFinite(parsedCapacity) || parsedCapacity < 1) {
+      setBulkError("La capacidad debe ser un número mayor o igual a 1.");
+      return;
+    }
+
+    const monthlyDates =
+      scheduleMode === "monthly"
+        ? buildMonthlyScheduleDates(scheduleMonth, monthlyWeekdays, excludedHolidayDates)
+        : [];
+
+    if (scheduleMode === "monthly" && !monthlyWeekdays.length) {
+      setBulkError("Seleccioná al menos un día de la semana para armar la grilla mensual.");
+      return;
+    }
+
+    if (scheduleMode === "monthly" && !monthlyDates.length) {
+      setBulkError("No quedaron fechas disponibles para el mes elegido con los filtros actuales.");
+      return;
+    }
+
+    bulkCreateMutation.mutate({
+      mode: scheduleMode,
+      court_ids: bulkCourtIds,
+      window_starts_at: combineDateTime(selectedDate, windowStart),
+      window_ends_at: combineDateTime(selectedDate, windowEnd),
+      slot_minutes: parsedSlotMinutes,
+      capacity: parsedCapacity,
+      price: price ? Number(price) : null,
+      is_active: isActive,
+      dates: monthlyDates,
+    });
+  }
+
+  function beginEdit(timeslot: TimeSlot) {
+    setEditingTimeSlotId(timeslot.id);
+    setEditStartsAt(toLocalDateTimeInput(timeslot.starts_at));
+    setEditEndsAt(toLocalDateTimeInput(timeslot.ends_at));
+    setEditCapacity(String(timeslot.capacity));
+    setEditPrice(timeslot.price !== null ? String(timeslot.price) : "");
+    setEditIsActive(timeslot.is_active);
+    setEditError(null);
+    setEditSuccess(null);
+  }
+
+  function handleEditSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!editingTimeSlotId) {
+      return;
+    }
+
+    const parsedCapacity = Number(editCapacity);
+    if (!Number.isFinite(parsedCapacity) || parsedCapacity < 1) {
+      setEditError("La capacidad debe ser un número mayor o igual a 1.");
+      return;
+    }
+
+    updateTimeSlotMutation.mutate({
+      timeslotId: editingTimeSlotId,
+      payload: {
+        starts_at: new Date(editStartsAt).toISOString(),
+        ends_at: new Date(editEndsAt).toISOString(),
+        capacity: parsedCapacity,
+        price: editPrice ? Number(editPrice) : null,
+        is_active: editIsActive,
+      },
+    });
+  }
+
+  return (
+    <>
+      <AppHeader />
+      <section className="space-y-6">
+        <AdminNav />
+
+        <SectionTitle
+          eyebrow="Admin"
+          title="Gestión automática de turnos"
+          description="Generá bloques completos por rango horario para este complejo, elegí la duración de cada turno y repetí la carga en varias canchas. También podés editar turnos ya creados desde la misma pantalla."
+        />
+
+        <div className="shell-card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-sport-filter">
+              Deporte
+            </label>
+            <select id="timeslot-sport-filter" className="field" value={filterSportId} onChange={(event) => setFilterSportId(event.target.value)}>
+              <option value="">Todos los deportes</option>
+              {(sportsQuery.data ?? []).map((sport) => (
+                <option key={sport.id} value={sport.id}>
+                  {sport.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-venue-filter">
+              Sede
+            </label>
+            <select id="timeslot-venue-filter" className="field" value={filterVenueId} onChange={(event) => setFilterVenueId(event.target.value)}>
+              <option value="">Todas las sedes</option>
+              {filteredVenues.map((venue) => (
+                <option key={venue.id} value={venue.id}>
+                  {venue.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-court-filter-header">
+              Canchas visibles
+            </label>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              {filteredCourts.length} canchas para este filtro
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-date-filter-header">
+              Día
+            </label>
+            <input id="timeslot-date-filter-header" className="field" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+          </div>
+        </div>
+
+        {activePolicyQuery.data ? (
+          <div className="shell-card flex items-start gap-3 p-4 text-sm text-slate-600">
+            <TimerReset className="mt-0.5 text-skyline" size={18} />
+            <div>
+              <p className="font-semibold text-slate-900">
+                {filterSportId ? `Política activa para ${activePolicyQuery.data.sport_name}` : "Política general del complejo"}
+              </p>
+              <p className="mt-1">{activePolicyQuery.data.booking_message}</p>
+              <p className="mt-1">{activePolicyQuery.data.cancellation_message}</p>
+              <p className="mt-2 text-xs font-medium text-slate-400">{activePolicyQuery.data.admin_summary}</p>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <form className="shell-card space-y-4 p-5" onSubmit={handleBulkSubmit}>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                <Shield size={18} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-950">Generación masiva</h3>
+                <p className="text-sm text-slate-500">Ideal para cargar una jornada completa de una o varias canchas.</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  scheduleMode === "daily" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+                type="button"
+                onClick={() => setScheduleMode("daily")}
+              >
+                Carga diaria
+              </button>
+              <button
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  scheduleMode === "monthly" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+                type="button"
+                onClick={() => setScheduleMode("monthly")}
+              >
+                Grilla mensual
+              </button>
+            </div>
+
+            {scheduleMode === "daily" ? (
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-date">
+                  Día
+                </label>
+                <input id="bulk-date" className="field" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-month">
+                      Mes de trabajo
+                    </label>
+                    <input id="bulk-month" className="field" type="month" value={scheduleMonth} onChange={(event) => setScheduleMonth(event.target.value)} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="holiday-country">
+                      País de feriados
+                    </label>
+                    <select id="holiday-country" className="field" value={holidayCountryCode} onChange={(event) => setHolidayCountryCode(event.target.value.toUpperCase())}>
+                      <option value="AR">Argentina</option>
+                      <option value="UY">Uruguay</option>
+                      <option value="CL">Chile</option>
+                      <option value="BR">Brasil</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 block text-sm font-semibold text-slate-700">Días de la semana</p>
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                    {weekdayOptions.map((weekday) => (
+                      <button
+                        key={weekday.value}
+                        className={`rounded-2xl border px-3 py-2 text-sm font-semibold transition ${
+                          monthlyWeekdays.includes(weekday.value)
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                        type="button"
+                        onClick={() => toggleWeekday(weekday.value)}
+                      >
+                        {weekday.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-900">Feriados del mes</p>
+                  {holidaysQuery.isLoading ? (
+                    <p className="mt-2 text-sm text-slate-500">Consultando calendario oficial...</p>
+                  ) : holidaysQuery.error ? (
+                    <p className="mt-2 text-sm text-rose-600">
+                      {holidaysQuery.error instanceof Error ? holidaysQuery.error.message : "No pudimos cargar los feriados."}
+                    </p>
+                  ) : holidaysQuery.data?.holidays.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {holidaysQuery.data.holidays.map((holiday) => {
+                        const checked = excludedHolidayDates.includes(holiday.date);
+                        return (
+                          <label
+                            key={holiday.date}
+                            className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                              checked ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500"
+                            }`}
+                          >
+                            <input
+                              className="mr-2"
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleHolidayDate(holiday.date)}
+                            />
+                            {holiday.date} · {holiday.local_name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500">No encontramos feriados oficiales para este mes.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p className="mb-2 block text-sm font-semibold text-slate-700">Canchas</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {filteredCourts.map((court) => (
+                  <label
+                    key={court.id}
+                    className={`rounded-2xl border px-4 py-3 text-sm transition ${
+                      bulkCourtIds.includes(court.id)
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    <input
+                      className="mr-2"
+                      type="checkbox"
+                      checked={bulkCourtIds.includes(court.id)}
+                      onChange={() => toggleCourt(court.id)}
+                    />
+                    {court.name}
+                  </label>
+                ))}
+              </div>
+              {bulkCourtIds.length ? (
+                <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <p className="font-semibold text-slate-900">Reglas operativas para la selección actual</p>
+                  <div className="mt-2 space-y-1">
+                    {bulkPolicyRows.map((policyRow) => (
+                      <p key={policyRow.sportId}>
+                        {policyRow.label} {policyRow.usesDefault ? "Usa la política general." : "Tiene configuración propia."}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="window-start">
+                  Desde
+                </label>
+                <input id="window-start" className="field" type="time" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="window-end">
+                  Hasta
+                </label>
+                <input id="window-end" className="field" type="time" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="slot-minutes">
+                  Duración
+                </label>
+                <select id="slot-minutes" className="field" value={slotMinutes} onChange={(event) => setSlotMinutes(event.target.value)}>
+                  <option value="60">60 min</option>
+                  <option value="90">90 min</option>
+                  <option value="120">120 min</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-capacity">
+                  Capacidad
+                </label>
+                <input id="bulk-capacity" className="field" type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="bulk-price">
+                  Precio
+                </label>
+                <input id="bulk-price" className="field" type="number" min="0" step="1" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Opcional" />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <input type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} />
+              Crear los turnos como activos
+            </label>
+
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Vista previa del bloque</p>
+                  <p className="text-sm text-slate-500">
+                    {previewSlots.length
+                      ? scheduleMode === "monthly"
+                        ? `Se trabajarían ${previewSummary.uniqueDates.length} fechas, con ${previewSummary.totalCreateCount} turnos a crear y ${previewSummary.totalSkippedCount} a omitir.`
+                        : `Se crearían ${previewSummary.totalCreateCount} turnos y se omitirían ${previewSummary.totalSkippedCount}.`
+                      : scheduleMode === "monthly"
+                        ? "Elegí el mes, los días y los feriados a excluir para ver la grilla completa."
+                        : "Completá el rango y la duración para ver los turnos que se van a crear."}
+                  </p>
+                </div>
+                {previewSlots.length ? (
+                  <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+                    {slotMinutes} min
+                  </span>
+                ) : null}
+              </div>
+
+              {previewSlots.length ? (
+                <>
+                  <p className="mt-3 text-xs font-medium text-slate-500">
+                    {previewTimeZone
+                      ? `Vista previa en hora local de la sede: ${timeZoneSummary(previewTimeZone)}.`
+                      : selectedBulkTimezones.length > 1
+                        ? "Las canchas elegidas pertenecen a distintas zonas horarias. Revisá la sede antes de confirmar."
+                        : "Seleccioná una cancha para ver la referencia horaria de la sede."}
+                  </p>
+                  {scheduleMode === "monthly" ? (
+                    <p className="mt-1 text-xs font-medium text-slate-400">
+                      Fechas incluidas: {previewSummary.uniqueDates.length}. Los feriados tildados se excluyen de la generación mensual.
+                    </p>
+                  ) : null}
+
+                  {existingDayTimeslotsQuery.isLoading ? (
+                    <div className="mt-3">
+                      <LoadingCard label="Verificando conflictos del día..." />
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {previewSummary.rows.map((slot) => (
+                        <div key={slot.startsAt} className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="font-semibold text-slate-800">
+                              {timeOnlyLabel(slot.startsAt, previewTimeZone)} - {timeOnlyLabel(slot.endsAt, previewTimeZone)}
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                              {slot.createCount ? (
+                                <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">Crear {slot.createCount}</span>
+                              ) : null}
+                              {slot.skippedCount ? (
+                                <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">Omitir {slot.skippedCount}</span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {slot.courtStatuses.map((courtStatus) => (
+                              <span
+                                key={`${slot.startsAt}-${courtStatus.courtId}`}
+                                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                  courtStatus.exists ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"
+                                }`}
+                              >
+                                {courtStatus.courtName}: {courtStatus.exists ? "ya existe" : "se crea"}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {previewSummary.crossesMidnight ? (
+                    <p className="mt-3 text-xs font-medium text-amber-700">
+                      Algunos turnos terminan después de la medianoche del día seleccionado.
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+
+            {bulkError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <div className="flex items-start gap-2">
+                  <CircleAlert className="mt-0.5" size={16} />
+                  <span>{bulkError}</span>
+                </div>
+              </div>
+            ) : null}
+
+            {bulkSuccess ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                {bulkSuccess}
+              </div>
+            ) : null}
+
+            <button className="btn-primary w-full" type="submit" disabled={bulkCreateMutation.isPending || existingDayTimeslotsQuery.isLoading}>
+              {bulkCreateMutation.isPending ? (
+                <span className="inline-flex items-center gap-2">
+                  <LoaderCircle className="animate-spin" size={16} />
+                  {scheduleMode === "monthly" ? "Generando grilla mensual..." : "Generando turnos..."}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <Plus size={16} />
+                  {scheduleMode === "monthly" ? "Crear grilla mensual" : "Crear bloque de turnos"}
+                </span>
+              )}
+            </button>
+          </form>
+
+          <div className="shell-card space-y-4 p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-950">Turnos existentes</h3>
+                <p className="text-sm text-slate-500">
+                  Usá los filtros superiores para bajar de deporte a sede y después elegir la cancha exacta que querés revisar.
+                </p>
+                {selectedVenue ? (
+                  <p className="mt-2 text-xs font-medium text-slate-400">
+                    Horario local de la sede: {selectedVenue.name} · {timeZoneSummary(selectedVenue.timezone)}
+                  </p>
+                ) : null}
+              </div>
+              <div className="shell-card flex items-center gap-3 px-4 py-3 shadow-none">
+                <CalendarClock className="text-skyline" size={18} />
+                <input className="bg-transparent text-sm font-semibold text-slate-700" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="timeslot-court-filter">
+                Filtrar por cancha
+              </label>
+              <select id="timeslot-court-filter" className="field" value={filterCourtId} onChange={(event) => setFilterCourtId(event.target.value)}>
+                <option value="">Todas las canchas</option>
+                {filteredCourts.map((court) => (
+                  <option key={court.id} value={court.id}>
+                    {court.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {editError ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{editError}</div> : null}
+            {editSuccess ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{editSuccess}</div> : null}
+
+            <div className="space-y-3">
+              {timeslotsQuery.isLoading ? (
+                <LoadingCard label="Cargando turnos..." />
+              ) : timeslotsQuery.data?.length ? (
+                visibleTimeslots.map((timeslot) => {
+                  const court = courtsById.get(timeslot.court_id);
+                  const venue = court ? venuesById.get(court.venue_id) : null;
+                  const isEditing = editingTimeSlotId === timeslot.id;
+
+                  return (
+                    <article key={timeslot.id} className="rounded-3xl border border-slate-200 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{court?.name || "Cancha"}</p>
+                          <h4 className="mt-1 text-lg font-bold text-slate-950">{dateLabel(timeslot.starts_at, venue?.timezone)}</h4>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Finaliza {dateLabel(timeslot.ends_at, venue?.timezone)} · Capacidad {timeslot.capacity}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-400">
+                            {venue ? `Hora local de ${venue.name}: ${timeZoneSummary(venue.timezone)}` : "Zona horaria pendiente"}
+                          </p>
+                          {timeslot.policy_summary ? (
+                            <p className="mt-1 text-xs font-medium text-slate-400">{timeslot.policy_summary}</p>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                          <TimerReset size={16} />
+                          <span>{timeslot.is_active ? "Activo" : "Inactivo"}</span>
+                          <button className="btn-secondary" type="button" onClick={() => beginEdit(timeslot)}>
+                            <PencilLine size={16} />
+                            Editar
+                          </button>
+                        </div>
+                      </div>
+
+                      {isEditing ? (
+                        <form className="mt-4 grid gap-4 border-t border-slate-200 pt-4" onSubmit={handleEditSubmit}>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <input className="field" type="datetime-local" value={editStartsAt} onChange={(event) => setEditStartsAt(event.target.value)} />
+                            <input className="field" type="datetime-local" value={editEndsAt} onChange={(event) => setEditEndsAt(event.target.value)} />
+                          </div>
+
+                          <p className="text-xs font-medium text-slate-400">
+                            Los horarios visibles se informan en la hora local de la sede para evitar cruces con UTC.
+                          </p>
+
+                          <div className="grid gap-4 sm:grid-cols-3">
+                            <input className="field" type="number" min="1" value={editCapacity} onChange={(event) => setEditCapacity(event.target.value)} />
+                            <input className="field" type="number" min="0" step="1" value={editPrice} onChange={(event) => setEditPrice(event.target.value)} placeholder="Precio" />
+                            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                              <input type="checkbox" checked={editIsActive} onChange={(event) => setEditIsActive(event.target.checked)} />
+                              Activo
+                            </label>
+                          </div>
+
+                          <button className="btn-primary" type="submit" disabled={updateTimeSlotMutation.isPending}>
+                            {updateTimeSlotMutation.isPending ? (
+                              <span className="inline-flex items-center gap-2">
+                                <LoaderCircle className="animate-spin" size={16} />
+                                Guardando...
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-2">
+                                <Save size={16} />
+                                Guardar cambios
+                              </span>
+                            )}
+                          </button>
+                        </form>
+                      ) : null}
+                    </article>
+                  );
+                })
+              ) : (
+                <EmptyState title="Todavía no hay turnos para este filtro" description="Podés crear un bloque para este complejo desde la izquierda o cambiar la fecha y la cancha seleccionada." />
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+

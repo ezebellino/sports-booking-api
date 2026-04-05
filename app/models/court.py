@@ -13,6 +13,7 @@ class Court(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=False, index=True)
     venue_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("venues.id", ondelete="RESTRICT"), nullable=False, index=True)
     sport_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sports.id", ondelete="RESTRICT"), nullable=False, index=True)
 
@@ -23,3 +24,4 @@ class Court(Base):
     venue = relationship("Venue", back_populates="courts")
     sport = relationship("Sport", back_populates="courts")
     timeslots = relationship("TimeSlot", back_populates="court", cascade="all, delete-orphan")
+    organization = relationship("Organization", back_populates="courts")
