@@ -14,4 +14,8 @@ export default defineConfig({
       clientPort: 5173,
     },
   },
+  preview: {
+    host: "0.0.0.0",
+    allowedHosts: ["reservas-deportivas.up.railway.app", "app.reservas-deportivas.com"],
+  },
 });
