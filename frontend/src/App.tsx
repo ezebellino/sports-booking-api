@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Building2, CalendarDays, Compass, House, LogIn, Ticket } from "lucide-react";
 import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import type { ReactElement } from "react";
 import { api } from "./lib/api";
 import { buildTenantPath, useTenantPath, useTenantSlug } from "./lib/tenant";
 import { useAuth } from "./modules/auth/auth-context";
@@ -18,18 +19,20 @@ import { MyBookingsPage } from "./pages/my-bookings-page";
 import { RegisterPage } from "./pages/register-page";
 import { StartComplexPage } from "./pages/start-complex-page";
 
-function ProtectedRoute({ children }: { children: React.ReactElement }) {
+function LoadingScreen({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-hero px-4">
+      <div className="shell-card w-full max-w-sm p-6 text-center text-sm text-slate-500">{label}</div>
+    </div>
+  );
+}
+
+function ProtectedRoute({ children }: { children: ReactElement }) {
   const { isAuthenticated, loading } = useAuth();
   const tenantPath = useTenantPath();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-hero px-4">
-        <div className="shell-card w-full max-w-sm p-6 text-center text-sm text-slate-500">
-          Cargando sesión...
-        </div>
-      </div>
-    );
+    return <LoadingScreen label="Cargando sesión..." />;
   }
 
   if (!isAuthenticated) {
@@ -39,51 +42,28 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
   return children;
 }
 
-function AdminRoute({ children }: { children: React.ReactElement }) {
-  const { isAuthenticated, canAccessAdmin, loading } = useAuth();
+function PermissionRoute({
+  children,
+  allowed,
+  fallbackTo,
+}: {
+  children: ReactElement;
+  allowed: boolean;
+  fallbackTo: string;
+}) {
+  const { isAuthenticated, loading } = useAuth();
   const tenantPath = useTenantPath();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-hero px-4">
-        <div className="shell-card w-full max-w-sm p-6 text-center text-sm text-slate-500">
-          Validando permisos...
-        </div>
-      </div>
-    );
+    return <LoadingScreen label="Validando permisos..." />;
   }
 
   if (!isAuthenticated) {
     return <Navigate to={tenantPath("/login")} replace />;
   }
 
-  if (!canAccessAdmin) {
-    return <Navigate to={tenantPath("/explore")} replace />;
-  }
-
-  return children;
-}
-
-function FullAdminRoute({ children }: { children: React.ReactElement }) {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
-  const tenantPath = useTenantPath();
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-hero px-4">
-        <div className="shell-card w-full max-w-sm p-6 text-center text-sm text-slate-500">
-          Validando permisos...
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to={tenantPath("/login")} replace />;
-  }
-
-  if (!isAdmin) {
-    return <Navigate to={tenantPath("/admin/metrics")} replace />;
+  if (!allowed) {
+    return <Navigate to={fallbackTo} replace />;
   }
 
   return children;
@@ -175,7 +155,25 @@ function TenantRouteBoundary() {
   return <Outlet />;
 }
 
-function renderSharedAppRoutes() {
+function renderSharedAppRoutes({
+  canManageInventory,
+  canManageOrganization,
+  canManageStaff,
+  canManageTimeslots,
+  canManageWhatsapp,
+  canViewMetrics,
+  tenantPath,
+}: {
+  canManageInventory: boolean;
+  canManageOrganization: boolean;
+  canManageStaff: boolean;
+  canManageTimeslots: boolean;
+  canManageWhatsapp: boolean;
+  canViewMetrics: boolean;
+  tenantPath: (path: string) => string;
+}) {
+  const adminFallback = canViewMetrics ? tenantPath("/admin/metrics") : tenantPath("/explore");
+
   return (
     <>
       <Route index element={<HomePage />} />
@@ -193,49 +191,49 @@ function renderSharedAppRoutes() {
       <Route
         path="admin/organization"
         element={
-          <FullAdminRoute>
+          <PermissionRoute allowed={canManageOrganization} fallbackTo={adminFallback}>
             <AdminOrganizationPage />
-          </FullAdminRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="admin/staff"
         element={
-          <FullAdminRoute>
+          <PermissionRoute allowed={canManageStaff} fallbackTo={adminFallback}>
             <AdminStaffPage />
-          </FullAdminRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="admin/metrics"
         element={
-          <AdminRoute>
+          <PermissionRoute allowed={canViewMetrics} fallbackTo={tenantPath("/explore")}>
             <AdminMetricsPage />
-          </AdminRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="admin/inventory"
         element={
-          <AdminRoute>
+          <PermissionRoute allowed={canManageInventory} fallbackTo={adminFallback}>
             <AdminInventoryPage />
-          </AdminRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="admin/timeslots"
         element={
-          <AdminRoute>
+          <PermissionRoute allowed={canManageTimeslots} fallbackTo={adminFallback}>
             <AdminTimeslotsPage />
-          </AdminRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="admin/whatsapp"
         element={
-          <FullAdminRoute>
+          <PermissionRoute allowed={canManageWhatsapp} fallbackTo={adminFallback}>
             <AdminWhatsappPage />
-          </FullAdminRoute>
+          </PermissionRoute>
         }
       />
     </>
@@ -267,18 +265,44 @@ function MobileLink({
 }
 
 export default function App() {
+  const {
+    canManageInventory,
+    canManageOrganization,
+    canManageStaff,
+    canManageTimeslots,
+    canManageWhatsapp,
+    canViewMetrics,
+  } = useAuth();
+  const tenantPath = useTenantPath();
+
   return (
     <Routes>
       <Route path="/start-complex" element={<StartComplexPage />} />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
       <Route element={<AppShellLayout />}>
-        {renderSharedAppRoutes()}
+        {renderSharedAppRoutes({
+          canManageInventory,
+          canManageOrganization,
+          canManageStaff,
+          canManageTimeslots,
+          canManageWhatsapp,
+          canViewMetrics,
+          tenantPath,
+        })}
       </Route>
 
       <Route path="/:organizationSlug" element={<TenantRouteBoundary />}>
         <Route element={<AppShellLayout />}>
-          {renderSharedAppRoutes()}
+          {renderSharedAppRoutes({
+            canManageInventory,
+            canManageOrganization,
+            canManageStaff,
+            canManageTimeslots,
+            canManageWhatsapp,
+            canViewMetrics,
+            tenantPath,
+          })}
         </Route>
       </Route>
 

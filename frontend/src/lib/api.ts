@@ -13,6 +13,16 @@ export type User = {
   organization_slug: string | null;
   whatsapp_number: string | null;
   whatsapp_opt_in: boolean;
+  permissions: UserPermissions;
+};
+
+export type UserPermissions = {
+  manage_organization: boolean;
+  manage_staff: boolean;
+  view_metrics: boolean;
+  manage_inventory: boolean;
+  manage_timeslots: boolean;
+  manage_whatsapp: boolean;
 };
 
 export type Organization = {

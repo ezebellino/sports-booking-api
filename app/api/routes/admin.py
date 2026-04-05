@@ -5,7 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps.auth import require_admin, require_staff_or_admin
+from app.api.deps.auth import (
+    require_manage_organization,
+    require_manage_staff,
+    require_manage_timeslots,
+    require_manage_whatsapp,
+    require_view_metrics,
+)
+from app.api.routes.auth import serialize_user
 from app.core.holidays import HolidayProviderError, fetch_public_holidays, filter_holidays_by_month
 from app.core.organization_settings import get_or_create_organization_settings
 from app.core.whatsapp import notification_status_payload
@@ -35,7 +42,7 @@ INACTIVE_COURT_BULK_DETAIL = "No se pueden generar turnos sobre canchas inactiva
 
 
 @router.get("/users", response_model=list[UserPublic])
-def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def list_users(db: Session = Depends(get_db), _: User = Depends(require_manage_staff)):
     current_admin = _
     users = (
         db.query(User)
@@ -43,18 +50,18 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
         .order_by(User.created_at.desc())
         .all()
     )
-    return users
+    return [serialize_user(user) for user in users]
 
 
 @router.get("/me", response_model=UserPublic)
-def admin_me(current_admin: User = Depends(require_admin)):
-    return current_admin
+def admin_me(current_admin: User = Depends(require_manage_staff)):
+    return serialize_user(current_admin)
 
 
 @router.get("/notification-status")
 def get_notification_status(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_staff_or_admin),
+    current_admin: User = Depends(require_manage_whatsapp),
 ):
     organization = current_admin.organization
     settings = get_or_create_organization_settings(db, organization) if organization else None
@@ -66,7 +73,7 @@ def get_holidays_calendar(
     year: int = Query(..., ge=2000, le=2100),
     month: int | None = Query(default=None, ge=1, le=12),
     country_code: str = Query(default="AR", min_length=2, max_length=2),
-    _: User = Depends(require_staff_or_admin),
+    _: User = Depends(require_manage_timeslots),
 ):
     try:
         holidays = filter_holidays_by_month(fetch_public_holidays(year, country_code), month)
@@ -96,7 +103,7 @@ def get_holidays_calendar(
 @router.get("/tenant-integrity", response_model=TenantIntegrityPublic)
 def get_tenant_integrity(
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_manage_organization),
 ):
     counts = TenantIntegrityCounts(
         organizations=int(db.execute(select(func.count(Organization.id))).scalar_one()),
@@ -207,7 +214,7 @@ def get_admin_metrics(
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_staff_or_admin),
+    current_admin: User = Depends(require_view_metrics),
 ):
     stmt = select(TimeSlot).options(
         joinedload(TimeSlot.court).joinedload(Court.sport),
@@ -293,7 +300,7 @@ def get_admin_metrics(
 def bulk_create_timeslots(
     payload: TimeSlotBulkCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_staff_or_admin),
+    current_admin: User = Depends(require_manage_timeslots),
 ):
     courts = (
         db.query(Court)

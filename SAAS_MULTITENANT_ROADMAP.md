@@ -63,7 +63,7 @@ Estado: `closed`
 ## Phase S3: Public Tenant Resolution
 Objetivo: hacer que cada complejo tenga una entrada pública clara.
 
-Estado: `in_progress`
+Estado: `closed`
 
 ### Estrategia adoptada
 - `slug` por path
@@ -83,9 +83,9 @@ Ejemplo:
 - `request-context` devuelve `404` si el slug público no existe.
 - La app muestra una pantalla de complejo no encontrado en vez de caer al tenant por defecto.
 
-### Pendiente
-- Definir si `accept-invite` y otros accesos públicos también deben quedar tenant-aware visualmente.
+### Pendiente menor
 - Evaluar si conviene redirigir automáticamente a la URL canónica del tenant después del login.
+- Revisar si `accept-invite` necesita contexto visual tenant-aware adicional.
 
 ### Definition of Done
 - El usuario entiende claramente en qué complejo está operando antes de iniciar sesión.
@@ -115,24 +115,37 @@ Estado: `in_progress`
 - Cada complejo se percibe visualmente como su propio espacio dentro de la plataforma.
 
 ## Phase S5: Staff Permissions
-Objetivo: refinar permisos operativos.
+Objetivo: refinar permisos operativos sin complejizar el modelo antes de tiempo.
 
-Estado: `pending`
+Estado: `in_progress`
 
-### Roles sugeridos
+### Matriz actual adoptada
 - `admin`
-- `staff_operations`
-- `staff_metrics`
+  - `manage_organization`
+  - `manage_staff`
+  - `view_metrics`
+  - `manage_inventory`
+  - `manage_timeslots`
+  - `manage_whatsapp`
+- `staff`
+  - `view_metrics`
+  - `manage_inventory`
+  - `manage_timeslots`
 - `user`
+  - sin permisos operativos
 
 ### Task S5.1
-Definir matriz de permisos.
+- Exponer `permissions` en `auth/me`.
+- Hacer enforcement backend por capacidad, no solo por `role`.
+- Alinear navegación y rutas admin con esos permisos.
 
 ### Task S5.2
-Ajustar backend y frontend según esa matriz.
+- Evaluar si más adelante hace falta separar `staff_operations` y `staff_metrics`.
+- Ocultar o mostrar módulos admin según permiso real.
 
 ### Definition of Done
 - El staff no recibe más acceso del necesario.
+- La UI no muestra secciones que el backend igual terminaría bloqueando.
 
 ## Phase S6: SaaS Operations
 Objetivo: preparar la plataforma para clientes reales.
@@ -162,10 +175,9 @@ Auditoría básica de acciones admin.
 - Un complejo puede darse de alta, configurarse y salir a producción con proceso claro.
 
 ## Recommended Order
-1. S3 Public Tenant Resolution
-2. S4 Real Branding
-3. S5 Staff Permissions
-4. S6 SaaS Operations
+1. S4 Real Branding
+2. S5 Staff Permissions
+3. S6 SaaS Operations
 
 ## About Existing Plans
 

@@ -2,26 +2,31 @@ import { Building2 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../modules/auth/auth-context";
 
-const adminLinks = [
-  { to: "/admin/organization", label: "Complejo" },
-  { to: "/admin/staff", label: "Staff" },
-  { to: "/admin/metrics", label: "Métricas" },
-  { to: "/admin/inventory", label: "Sedes y canchas" },
-  { to: "/admin/timeslots", label: "Turnos" },
-  { to: "/admin/whatsapp", label: "WhatsApp" },
-];
-
 export function AdminNav() {
-  const { user, isAdmin } = useAuth();
+  const {
+    user,
+    canManageOrganization,
+    canManageStaff,
+    canViewMetrics,
+    canManageInventory,
+    canManageTimeslots,
+    canManageWhatsapp,
+  } = useAuth();
+
   const organizationLabel = user?.organization_name ?? "Complejo Demo";
-  const visibleLinks = adminLinks.filter((link) =>
-    isAdmin ? true : !["/admin/organization", "/admin/staff", "/admin/whatsapp"].includes(link.to),
-  );
+  const adminLinks = [
+    canManageOrganization ? { to: "/admin/organization", label: "Complejo" } : null,
+    canManageStaff ? { to: "/admin/staff", label: "Staff" } : null,
+    canViewMetrics ? { to: "/admin/metrics", label: "Métricas" } : null,
+    canManageInventory ? { to: "/admin/inventory", label: "Sedes y canchas" } : null,
+    canManageTimeslots ? { to: "/admin/timeslots", label: "Turnos" } : null,
+    canManageWhatsapp ? { to: "/admin/whatsapp", label: "WhatsApp" } : null,
+  ].filter(Boolean) as Array<{ to: string; label: string }>;
 
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <nav className="flex flex-wrap gap-2" data-tour="admin-nav">
-        {visibleLinks.map((link) => (
+        {adminLinks.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}

@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.api.routes.auth import (
+    build_user_permissions,
     ensure_user_organization,
     get_default_organization,
     get_request_organization_from_request,
@@ -20,6 +21,12 @@ AUTH_ERROR_DETAIL = "Token inválido o expirado"
 USER_NOT_FOUND_DETAIL = "Usuario no encontrado"
 ADMIN_ONLY_DETAIL = "Acceso exclusivo para administradores"
 STAFF_ONLY_DETAIL = "Acceso exclusivo para staff operativo o administradores"
+ORG_ONLY_DETAIL = "Acceso exclusivo para configuración del complejo"
+STAFF_MANAGEMENT_ONLY_DETAIL = "Acceso exclusivo para gestión de staff"
+METRICS_ONLY_DETAIL = "Acceso exclusivo para métricas operativas"
+INVENTORY_ONLY_DETAIL = "Acceso exclusivo para inventario operativo"
+TIMESLOTS_ONLY_DETAIL = "Acceso exclusivo para turnos operativos"
+WHATSAPP_ONLY_DETAIL = "Acceso exclusivo para configuración de WhatsApp"
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
@@ -88,4 +95,40 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 def require_staff_or_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role not in {"admin", "staff"}:
         raise HTTPException(status_code=403, detail=STAFF_ONLY_DETAIL)
+    return current_user
+
+
+def require_manage_organization(current_user: User = Depends(get_current_user)) -> User:
+    if not build_user_permissions(current_user).manage_organization:
+        raise HTTPException(status_code=403, detail=ORG_ONLY_DETAIL)
+    return current_user
+
+
+def require_manage_staff(current_user: User = Depends(get_current_user)) -> User:
+    if not build_user_permissions(current_user).manage_staff:
+        raise HTTPException(status_code=403, detail=STAFF_MANAGEMENT_ONLY_DETAIL)
+    return current_user
+
+
+def require_view_metrics(current_user: User = Depends(get_current_user)) -> User:
+    if not build_user_permissions(current_user).view_metrics:
+        raise HTTPException(status_code=403, detail=METRICS_ONLY_DETAIL)
+    return current_user
+
+
+def require_manage_inventory(current_user: User = Depends(get_current_user)) -> User:
+    if not build_user_permissions(current_user).manage_inventory:
+        raise HTTPException(status_code=403, detail=INVENTORY_ONLY_DETAIL)
+    return current_user
+
+
+def require_manage_timeslots(current_user: User = Depends(get_current_user)) -> User:
+    if not build_user_permissions(current_user).manage_timeslots:
+        raise HTTPException(status_code=403, detail=TIMESLOTS_ONLY_DETAIL)
+    return current_user
+
+
+def require_manage_whatsapp(current_user: User = Depends(get_current_user)) -> User:
+    if not build_user_permissions(current_user).manage_whatsapp:
+        raise HTTPException(status_code=403, detail=WHATSAPP_ONLY_DETAIL)
     return current_user

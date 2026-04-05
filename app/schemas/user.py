@@ -6,6 +6,15 @@ from pydantic import BaseModel, ConfigDict, EmailStr, field_validator  # type: i
 UserRole = Literal["admin", "staff", "user"]
 
 
+class UserPermissionsPublic(BaseModel):
+    manage_organization: bool
+    manage_staff: bool
+    view_metrics: bool
+    manage_inventory: bool
+    manage_timeslots: bool
+    manage_whatsapp: bool
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -48,3 +57,4 @@ class UserPublic(BaseModel):
     organization_slug: str | None = None
     whatsapp_number: str | None = None
     whatsapp_opt_in: bool
+    permissions: UserPermissionsPublic

@@ -14,7 +14,7 @@ from app.db.session import get_db
 from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.auth import RefreshRequest, TokenPair
-from app.schemas.user import UserCreate, UserPublic, UserUpdate
+from app.schemas.user import UserCreate, UserPermissionsPublic, UserPublic, UserUpdate
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -80,6 +80,37 @@ def ensure_user_organization(db: Session, user: User) -> User:
     return user
 
 
+def build_user_permissions(user: User) -> UserPermissionsPublic:
+    if user.role == "admin":
+        return UserPermissionsPublic(
+            manage_organization=True,
+            manage_staff=True,
+            view_metrics=True,
+            manage_inventory=True,
+            manage_timeslots=True,
+            manage_whatsapp=True,
+        )
+
+    if user.role == "staff":
+        return UserPermissionsPublic(
+            manage_organization=False,
+            manage_staff=False,
+            view_metrics=True,
+            manage_inventory=True,
+            manage_timeslots=True,
+            manage_whatsapp=False,
+        )
+
+    return UserPermissionsPublic(
+        manage_organization=False,
+        manage_staff=False,
+        view_metrics=False,
+        manage_inventory=False,
+        manage_timeslots=False,
+        manage_whatsapp=False,
+    )
+
+
 def serialize_user(user: User) -> UserPublic:
     return UserPublic(
         id=str(user.id),
@@ -91,6 +122,7 @@ def serialize_user(user: User) -> UserPublic:
         organization_slug=user.organization.slug if user.organization else None,
         whatsapp_number=user.whatsapp_number,
         whatsapp_opt_in=user.whatsapp_opt_in,
+        permissions=build_user_permissions(user),
     )
 
 

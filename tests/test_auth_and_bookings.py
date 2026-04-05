@@ -161,11 +161,62 @@ def test_register_assigns_default_organization(client, db_session):
     assert created_user.organization_id == organization.id
 
 
+def test_auth_me_exposes_permissions_by_role(client, db_session):
+    user_token = register_and_login(client, "perm-user@example.com", "password123", "Perm User")
+    user_me = client.get("/auth/me", headers=auth_headers(user_token))
+    assert user_me.status_code == 200
+    assert user_me.json()["permissions"] == {
+        "manage_organization": False,
+        "manage_staff": False,
+        "view_metrics": False,
+        "manage_inventory": False,
+        "manage_timeslots": False,
+        "manage_whatsapp": False,
+    }
+
+    staff_user = db_session.query(User).filter(User.email == "perm-user@example.com").first()
+    staff_user.role = "staff"
+    db_session.commit()
+
+    staff_token = client.post(
+        "/auth/login",
+        data={"username": "perm-user@example.com", "password": "password123"},
+    ).json()["access_token"]
+    staff_me = client.get("/auth/me", headers=auth_headers(staff_token))
+    assert staff_me.status_code == 200
+    assert staff_me.json()["permissions"] == {
+        "manage_organization": False,
+        "manage_staff": False,
+        "view_metrics": True,
+        "manage_inventory": True,
+        "manage_timeslots": True,
+        "manage_whatsapp": False,
+    }
+
+    staff_user.role = "admin"
+    db_session.commit()
+
+    admin_token = client.post(
+        "/auth/login",
+        data={"username": "perm-user@example.com", "password": "password123"},
+    ).json()["access_token"]
+    admin_me = client.get("/auth/me", headers=auth_headers(admin_token))
+    assert admin_me.status_code == 200
+    assert admin_me.json()["permissions"] == {
+        "manage_organization": True,
+        "manage_staff": True,
+        "view_metrics": True,
+        "manage_inventory": True,
+        "manage_timeslots": True,
+        "manage_whatsapp": True,
+    }
+
+
 def test_admin_route_requires_admin_role(client, db_session):
     user_token = register_and_login(client, "normal@example.com", "password123", "Normal User")
     forbidden_response = client.get("/admin/me", headers=auth_headers(user_token))
     assert forbidden_response.status_code == 403
-    assert forbidden_response.json()["detail"] == "Acceso exclusivo para administradores"
+    assert forbidden_response.json()["detail"] == "Acceso exclusivo para gestión de staff"
 
     admin_user = db_session.query(User).filter(User.email == "normal@example.com").first()
     admin_user.role = "admin"

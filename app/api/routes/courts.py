@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import get_request_organization, require_staff_or_admin
+from app.api.deps.auth import get_request_organization, require_manage_inventory
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
@@ -53,7 +53,7 @@ def ensure_enabled_organization_sport(db: Session, organization_id, sport_id):
 def create_court(
     payload: CourtCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_staff_or_admin),
+    current_admin: User = Depends(require_manage_inventory),
 ):
     venue = db.query(Venue).filter(Venue.id == payload.venue_id, Venue.organization_id == current_admin.organization_id).first()
     if not venue:
@@ -106,7 +106,7 @@ def update_court(
     court_id: str,
     payload: CourtUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_staff_or_admin),
+    current_admin: User = Depends(require_manage_inventory),
 ):
     court = db.query(Court).filter(Court.id == court_id, Court.organization_id == current_admin.organization_id).first()
     if not court:
@@ -150,7 +150,7 @@ def update_court(
 def delete_court(
     court_id: str,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_staff_or_admin),
+    current_admin: User = Depends(require_manage_inventory),
 ):
     now = datetime.now(timezone.utc)
     court = db.query(Court).filter(Court.id == court_id, Court.organization_id == current_admin.organization_id).first()

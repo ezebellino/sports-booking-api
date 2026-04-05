@@ -15,6 +15,12 @@ type AuthContextValue = {
   isAdmin: boolean;
   isStaff: boolean;
   canAccessAdmin: boolean;
+  canManageOrganization: boolean;
+  canManageStaff: boolean;
+  canViewMetrics: boolean;
+  canManageInventory: boolean;
+  canManageTimeslots: boolean;
+  canManageWhatsapp: boolean;
   loading: boolean;
   login: (input: { email: string; password: string }) => Promise<void>;
   register: (input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
@@ -127,6 +133,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  const permissions = user?.permissions;
+
   return (
     <AuthContext.Provider
       value={{
@@ -134,7 +142,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: Boolean(user),
         isAdmin: user?.role === "admin",
         isStaff: user?.role === "staff",
-        canAccessAdmin: user?.role === "admin" || user?.role === "staff",
+        canAccessAdmin: Boolean(
+          permissions?.manage_organization ||
+            permissions?.manage_staff ||
+            permissions?.view_metrics ||
+            permissions?.manage_inventory ||
+            permissions?.manage_timeslots ||
+            permissions?.manage_whatsapp,
+        ),
+        canManageOrganization: Boolean(permissions?.manage_organization),
+        canManageStaff: Boolean(permissions?.manage_staff),
+        canViewMetrics: Boolean(permissions?.view_metrics),
+        canManageInventory: Boolean(permissions?.manage_inventory),
+        canManageTimeslots: Boolean(permissions?.manage_timeslots),
+        canManageWhatsapp: Boolean(permissions?.manage_whatsapp),
         loading,
         login,
         register,

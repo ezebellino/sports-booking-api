@@ -6,7 +6,12 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps.auth import get_request_organization, require_admin
+from app.api.deps.auth import (
+    get_request_organization,
+    require_manage_organization,
+    require_manage_staff,
+    require_manage_whatsapp,
+)
 from app.api.routes.auth import ensure_user_organization
 from app.core.email import build_staff_invitation_link, send_staff_invitation_email
 from app.core.logo_storage import delete_managed_logo, save_uploaded_logo
@@ -191,7 +196,7 @@ def onboard_organization(payload: OrganizationOnboardingCreate, db: Session = De
 @router.get("/current", response_model=OrganizationPublic)
 def get_current_organization(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -204,7 +209,7 @@ def get_current_organization(
 def update_current_organization(
     payload: OrganizationUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -239,7 +244,7 @@ def update_current_organization(
 @router.get("/current/settings", response_model=OrganizationSettingsPublic)
 def get_current_organization_settings(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -252,7 +257,7 @@ def get_current_organization_settings(
 @router.get("/current/sports", response_model=list[OrganizationSportPublic])
 def list_current_organization_sports(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -267,7 +272,7 @@ def list_current_organization_sports(
 def update_current_organization_sports(
     payload: OrganizationSportsUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -292,7 +297,7 @@ def update_current_organization_sports(
 def update_current_organization_settings(
     payload: OrganizationSettingsUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_whatsapp),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -315,7 +320,7 @@ def update_current_organization_settings(
 async def upload_current_organization_logo(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -335,7 +340,7 @@ async def upload_current_organization_logo(
 @router.get("/current/staff-invitations", response_model=list[StaffInvitationPublic])
 def list_staff_invitations(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     now = datetime.now(timezone.utc)
@@ -356,7 +361,7 @@ def list_staff_invitations(
 def create_staff_invitation(
     payload: StaffInvitationCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     if db.query(User).filter(User.email == payload.email).first():
@@ -404,7 +409,7 @@ def create_staff_invitation(
 def cancel_staff_invitation(
     invitation_id: str,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     invitation = (
