@@ -1,3 +1,4 @@
+from app.models.admin_audit_event import AdminAuditEvent  # noqa
 from app.models.organization import Organization  # noqa
 from app.models.organization_sport import OrganizationSport  # noqa
 from app.models.organization_settings import OrganizationSettings  # noqa

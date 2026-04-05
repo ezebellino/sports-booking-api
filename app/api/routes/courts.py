@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_request_organization, require_manage_inventory
+from app.core.admin_audit import record_admin_audit_event
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.court import Court
@@ -79,6 +80,17 @@ def create_court(
         is_active=payload.is_active,
     )
     db.add(court)
+    db.flush()
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="court.created",
+        target_type="court",
+        target_id=str(court.id),
+        summary=f"Creó la cancha {court.name}.",
+        details={"name": court.name, "is_active": court.is_active},
+    )
     db.commit()
     db.refresh(court)
     return court
@@ -141,6 +153,16 @@ def update_court(
     if payload.is_active is not None:
         court.is_active = payload.is_active
 
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="court.updated",
+        target_type="court",
+        target_id=str(court.id),
+        summary=f"Actualizó la cancha {court.name}.",
+        details={"name": court.name, "is_active": court.is_active},
+    )
     db.commit()
     db.refresh(court)
     return court
@@ -174,6 +196,16 @@ def delete_court(
     if has_future_timeslots:
         raise HTTPException(status_code=409, detail=COURT_DELETE_BLOCKED_FUTURE_TIMESLOTS_DETAIL)
 
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="court.deleted",
+        target_type="court",
+        target_id=str(court.id),
+        summary=f"Eliminó la cancha {court.name}.",
+        details={"name": court.name},
+    )
     db.delete(court)
     db.commit()
     return

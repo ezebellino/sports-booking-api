@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_request_organization, require_manage_inventory
+from app.core.admin_audit import record_admin_audit_event
 from app.db.session import get_db
 from app.models.organization import Organization
 from app.models.organization_sport import OrganizationSport
@@ -66,6 +67,17 @@ def create_venue(
         allowed_sport_id=payload.allowed_sport_id,
     )
     db.add(venue)
+    db.flush()
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="venue.created",
+        target_type="venue",
+        target_id=str(venue.id),
+        summary=f"Creó la sede {venue.name}.",
+        details={"name": venue.name, "timezone": venue.timezone},
+    )
     db.commit()
     db.refresh(venue)
     return venue
@@ -116,6 +128,16 @@ def update_venue(
     if payload.allowed_sport_id is not None:
         venue.allowed_sport_id = payload.allowed_sport_id
 
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="venue.updated",
+        target_type="venue",
+        target_id=str(venue.id),
+        summary=f"Actualizó la sede {venue.name}.",
+        details={"name": venue.name, "timezone": venue.timezone},
+    )
     db.commit()
     db.refresh(venue)
     return venue
@@ -133,6 +155,16 @@ def delete_venue(
     if venue.courts:
         raise HTTPException(status_code=409, detail=VENUE_DELETE_BLOCKED_DETAIL)
 
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="venue.deleted",
+        target_type="venue",
+        target_id=str(venue.id),
+        summary=f"Eliminó la sede {venue.name}.",
+        details={"name": venue.name},
+    )
     db.delete(venue)
     db.commit()
     return

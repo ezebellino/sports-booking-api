@@ -93,3 +93,14 @@ class AdminReadinessSummary(BaseModel):
 class AdminReadinessPublic(BaseModel):
     summary: AdminReadinessSummary
     items: list[AdminReadinessItem]
+
+
+class AdminAuditEventPublic(BaseModel):
+    id: str
+    action: str
+    target_type: str
+    target_id: str | None = None
+    summary: str
+    actor_email: str
+    actor_name: str | None = None
+    created_at: str

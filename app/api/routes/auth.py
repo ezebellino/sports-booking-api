@@ -23,6 +23,7 @@ oauth2_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 DEFAULT_ORGANIZATION_SLUG = "complejo-demo"
 TENANT_MISMATCH_DETAIL = "Esta cuenta pertenece a otro complejo"
 ORGANIZATION_NOT_FOUND_DETAIL = "Complejo no encontrado"
+ORGANIZATION_INACTIVE_DETAIL = "Este complejo está desactivado"
 
 
 def get_default_organization(db: Session) -> Organization:
@@ -68,6 +69,12 @@ def get_request_organization_from_request(db: Session, request: Request) -> Orga
     return get_default_organization(db)
 
 
+def ensure_public_organization_is_active(organization: Organization) -> Organization:
+    if not organization.is_active:
+        raise HTTPException(status_code=403, detail=ORGANIZATION_INACTIVE_DETAIL)
+    return organization
+
+
 def ensure_user_organization(db: Session, user: User) -> User:
     if user.organization_id:
         return user
@@ -77,6 +84,14 @@ def ensure_user_organization(db: Session, user: User) -> User:
     db.add(user)
     db.commit()
     db.refresh(user)
+    return user
+
+
+def ensure_user_can_access_organization(db: Session, user: User) -> User:
+    user = ensure_user_organization(db, user)
+    organization = user.organization or db.get(Organization, user.organization_id)
+    if organization and not organization.is_active and user.role != "admin":
+        raise HTTPException(status_code=403, detail=ORGANIZATION_INACTIVE_DETAIL)
     return user
 
 
@@ -136,7 +151,7 @@ def get_current_user_from_token(token: str, db: Session) -> User:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return ensure_user_organization(db, user)
+    return ensure_user_can_access_organization(db, user)
 
 
 @router.post("/register", response_model=UserPublic, status_code=201)
@@ -147,7 +162,7 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
 
     whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
     whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
-    target_organization = get_request_organization_from_request(db, request)
+    target_organization = ensure_public_organization_is_active(get_request_organization_from_request(db, request))
 
     user = User(
         email=payload.email,
@@ -174,6 +189,8 @@ def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = None, 
     requested_organization = get_request_organization_from_request(db, request)
     if user.organization_id != requested_organization.id:
         raise HTTPException(status_code=403, detail=TENANT_MISMATCH_DETAIL)
+    if not requested_organization.is_active and user.role != "admin":
+        raise HTTPException(status_code=403, detail=ORGANIZATION_INACTIVE_DETAIL)
 
     access = create_access_token(
         subject=str(user.id),
@@ -201,7 +218,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    user = ensure_user_organization(db, user)
+    user = ensure_user_can_access_organization(db, user)
 
     access = create_access_token(
         subject=str(user.id),

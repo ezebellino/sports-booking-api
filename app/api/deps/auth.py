@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 from app.api.routes.auth import (
     build_user_permissions,
     ensure_user_organization,
+    ensure_user_can_access_organization,
     get_default_organization,
+    ensure_public_organization_is_active,
     get_request_organization_from_request,
     get_requested_organization_slug_from_request,
     oauth2_optional,
@@ -39,7 +41,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
-    return ensure_user_organization(db, user)
+    return ensure_user_can_access_organization(db, user)
 
 
 def get_optional_current_user(token: str | None = Depends(oauth2_optional), db: Session = Depends(get_db)) -> User | None:
@@ -56,7 +58,10 @@ def get_optional_current_user(token: str | None = Depends(oauth2_optional), db: 
     user = db.get(User, user_id)
     if not user:
         return None
-    return ensure_user_organization(db, user)
+    try:
+        return ensure_user_can_access_organization(db, user)
+    except HTTPException:
+        return None
 
 
 def get_current_organization(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Organization:
@@ -78,10 +83,10 @@ def get_request_organization(
             return organization
 
     if request is not None and get_requested_organization_slug_from_request(request):
-        return require_request_organization_from_request(db, request)
+        return ensure_public_organization_is_active(require_request_organization_from_request(db, request))
 
     if request is not None:
-        return get_request_organization_from_request(db, request)
+        return ensure_public_organization_is_active(get_request_organization_from_request(db, request))
 
     return get_default_organization(db)
 

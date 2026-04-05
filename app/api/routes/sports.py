@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_request_organization, require_admin
+from app.core.admin_audit import record_admin_audit_event
 from app.db.session import get_db
 from app.models.organization import Organization
 from app.models.organization_sport import OrganizationSport
@@ -44,6 +45,16 @@ def create_sport(
                 is_enabled=organization.id == current_admin.organization_id,
             )
         )
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="sport.created",
+        target_type="sport",
+        target_id=str(sport.id),
+        summary=f"Creó el deporte global {sport.name}.",
+        details={"name": sport.name},
+    )
     db.commit()
     db.refresh(sport)
     return sport

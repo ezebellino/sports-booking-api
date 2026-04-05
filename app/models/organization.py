@@ -35,6 +35,7 @@ class Organization(Base):
     courts = relationship("Court", back_populates="organization")
     timeslots = relationship("TimeSlot", back_populates="organization")
     bookings = relationship("Booking", back_populates="organization")
+    admin_audit_events = relationship("AdminAuditEvent", cascade="all, delete-orphan")
     settings = relationship("OrganizationSettings", back_populates="organization", uselist=False, cascade="all, delete-orphan")
     staff_invitations = relationship("StaffInvitation", back_populates="organization", cascade="all, delete-orphan")
     organization_sports = relationship("OrganizationSport", back_populates="organization", cascade="all, delete-orphan")

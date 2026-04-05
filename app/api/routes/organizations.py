@@ -13,6 +13,7 @@ from app.api.deps.auth import (
     require_manage_whatsapp,
 )
 from app.api.routes.auth import ensure_user_organization
+from app.core.admin_audit import record_admin_audit_event
 from app.core.email import build_staff_invitation_link, send_staff_invitation_email
 from app.core.logo_storage import delete_managed_logo, save_uploaded_logo
 from app.core.organization_settings import get_or_create_organization_settings
@@ -236,6 +237,17 @@ def update_current_organization(
     if "is_active" in data and data["is_active"] is not None:
         organization.is_active = data["is_active"]
 
+    record_admin_audit_event(
+        db,
+        organization_id=organization.id,
+        actor_user_id=current_admin.id,
+        action="organization.updated",
+        target_type="organization",
+        target_id=str(organization.id),
+        summary=f"Actualizó la configuración general de {organization.name}.",
+        details={"name": organization.name, "slug": organization.slug, "is_active": organization.is_active},
+    )
+
     db.commit()
     db.refresh(organization)
     return organization
@@ -286,6 +298,18 @@ def update_current_organization_sports(
         row.is_enabled = str(row.sport_id) in enabled_ids
         db.add(row)
 
+    enabled_names = [row.sport.name for row in rows if row.is_enabled]
+    record_admin_audit_event(
+        db,
+        organization_id=organization.id,
+        actor_user_id=current_admin.id,
+        action="organization.sports.updated",
+        target_type="organization_sports",
+        target_id=str(organization.id),
+        summary=f"Actualizó los deportes habilitados de {organization.name}.",
+        details={"enabled_sports": enabled_names},
+    )
+
     db.commit()
     for row in rows:
         db.refresh(row)
@@ -310,6 +334,23 @@ def update_current_organization_settings(
             value = normalize_whatsapp_number(value)
         setattr(settings, field, value)
 
+    record_admin_audit_event(
+        db,
+        organization_id=organization.id,
+        actor_user_id=current_admin.id,
+        action="organization.settings.updated",
+        target_type="organization_settings",
+        target_id=str(organization.id),
+        summary=f"Actualizó branding, políticas o WhatsApp de {organization.name}.",
+        details={
+            "branding_name": settings.branding_name,
+            "primary_color": settings.primary_color,
+            "booking_min_lead_minutes": settings.booking_min_lead_minutes,
+            "cancellation_min_lead_minutes": settings.cancellation_min_lead_minutes,
+            "whatsapp_provider": settings.whatsapp_provider,
+        },
+    )
+
     db.add(settings)
     db.commit()
     db.refresh(settings)
@@ -330,6 +371,16 @@ async def upload_current_organization_logo(
     settings = get_or_create_organization_settings(db, organization)
     previous_logo_url = settings.logo_url
     settings.logo_url = await save_uploaded_logo(file, organization.id)
+    record_admin_audit_event(
+        db,
+        organization_id=organization.id,
+        actor_user_id=current_admin.id,
+        action="organization.logo.updated",
+        target_type="organization_settings",
+        target_id=str(organization.id),
+        summary=f"Actualizó el logo de {organization.name}.",
+        details={"logo_url": settings.logo_url},
+    )
     db.add(settings)
     db.commit()
     db.refresh(settings)
@@ -378,6 +429,17 @@ def create_staff_invitation(
         expires_at=datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days),
     )
     db.add(invitation)
+    db.flush()
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="staff.invitation.created",
+        target_type="staff_invitation",
+        target_id=str(invitation.id),
+        summary=f"Emitió una invitación para {invitation.email} con rol {invitation.role}.",
+        details={"email": invitation.email, "role": invitation.role, "expires_at": invitation.expires_at.isoformat()},
+    )
     db.commit()
     db.refresh(invitation)
     organization = db.get(Organization, current_admin.organization_id)
@@ -426,6 +488,16 @@ def cancel_staff_invitation(
         raise HTTPException(status_code=409, detail=INVITATION_CANNOT_BE_CANCELLED_DETAIL)
 
     invitation.status = "cancelled"
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="staff.invitation.cancelled",
+        target_type="staff_invitation",
+        target_id=str(invitation.id),
+        summary=f"Canceló la invitación pendiente de {invitation.email}.",
+        details={"email": invitation.email, "role": invitation.role},
+    )
     db.add(invitation)
     db.commit()
     db.refresh(invitation)

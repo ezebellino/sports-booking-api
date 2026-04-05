@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import get_request_organization, require_manage_timeslots
+from app.core.admin_audit import record_admin_audit_event
 from app.core.booking_policy import policy_source_message, resolve_policy_for_timeslot
 from app.db.session import get_db
 from app.models.booking import Booking
@@ -98,6 +99,17 @@ def create_timeslot(
         is_active=payload.is_active,
     )
     db.add(timeslot)
+    db.flush()
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="timeslot.created",
+        target_type="timeslot",
+        target_id=str(timeslot.id),
+        summary=f"Creó un turno en {court.name}.",
+        details={"court_id": str(court.id), "starts_at": payload.starts_at.isoformat()},
+    )
     db.commit()
     db.refresh(timeslot)
     db.refresh(court)
@@ -173,6 +185,16 @@ def update_timeslot(
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(timeslot, field, value)
 
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="timeslot.updated",
+        target_type="timeslot",
+        target_id=str(timeslot.id),
+        summary=f"Actualizó un turno de {timeslot.court.name}.",
+        details={"court_id": str(timeslot.court.id), "starts_at": timeslot.starts_at.isoformat()},
+    )
     db.commit()
     db.refresh(timeslot)
     return serialize_timeslot(timeslot, confirmed_bookings)
@@ -188,6 +210,16 @@ def delete_timeslot(
     if not timeslot:
         raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
 
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="timeslot.deleted",
+        target_type="timeslot",
+        target_id=str(timeslot.id),
+        summary=f"Eliminó un turno de {timeslot.court.name}.",
+        details={"court_id": str(timeslot.court_id), "starts_at": timeslot.starts_at.isoformat()},
+    )
     db.delete(timeslot)
     db.commit()
     return

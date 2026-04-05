@@ -1,6 +1,7 @@
 ﻿from datetime import datetime, timedelta, timezone
 
 from app.core.holidays import HolidayProviderError, HolidayRecord
+from app.models.admin_audit_event import AdminAuditEvent
 from app.core.security import get_password_hash
 from app.models.booking import Booking
 from app.models.court import Court
@@ -2299,6 +2300,116 @@ def test_login_rejects_user_from_another_public_organization_slug(client):
     assert login_response.json()["detail"] == "Esta cuenta pertenece a otro complejo"
 
 
+def test_inactive_organization_blocks_public_context_and_registration(client):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "BlackPadel Suspendido",
+            "organization_slug": "blackpadel-suspendido",
+            "admin_full_name": "Black Admin",
+            "admin_email": "black-suspendido-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    deactivate_response = client.patch(
+        "/organizations/current",
+        json={"is_active": False},
+        headers=auth_headers(admin_token),
+    )
+    assert deactivate_response.status_code == 200
+    assert deactivate_response.json()["is_active"] is False
+
+    context_response = client.get(
+        "/organizations/request-context",
+        headers={"X-Organization-Slug": "blackpadel-suspendido"},
+    )
+    assert context_response.status_code == 403
+    assert context_response.json()["detail"] == "Este complejo está desactivado"
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": "jugador-suspendido@saas.com",
+            "full_name": "Jugador Suspendido",
+            "password": "password123",
+        },
+        headers={"X-Organization-Slug": "blackpadel-suspendido"},
+    )
+    assert register_response.status_code == 403
+    assert register_response.json()["detail"] == "Este complejo está desactivado"
+
+
+def test_inactive_organization_blocks_user_session_but_admin_can_still_access(client):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Inactivo",
+            "organization_slug": "complejo-inactivo",
+            "admin_full_name": "Owner Inactivo",
+            "admin_email": "owner-inactivo@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": "usuario-inactivo@saas.com",
+            "full_name": "Usuario Inactivo",
+            "password": "password123",
+        },
+        headers={"X-Organization-Slug": "complejo-inactivo"},
+    )
+    assert register_response.status_code == 201
+
+    user_login_response = client.post(
+        "/auth/login",
+        data={"username": "usuario-inactivo@saas.com", "password": "password123"},
+        headers={"X-Organization-Slug": "complejo-inactivo"},
+    )
+    assert user_login_response.status_code == 200
+    user_token = user_login_response.json()["access_token"]
+
+    deactivate_response = client.patch(
+        "/organizations/current",
+        json={"is_active": False},
+        headers=auth_headers(admin_token),
+    )
+    assert deactivate_response.status_code == 200
+    assert deactivate_response.json()["is_active"] is False
+
+    blocked_me_response = client.get("/auth/me", headers=auth_headers(user_token))
+    assert blocked_me_response.status_code == 403
+    assert blocked_me_response.json()["detail"] == "Este complejo está desactivado"
+
+    blocked_login_response = client.post(
+        "/auth/login",
+        data={"username": "usuario-inactivo@saas.com", "password": "password123"},
+        headers={"X-Organization-Slug": "complejo-inactivo"},
+    )
+    assert blocked_login_response.status_code == 403
+    assert blocked_login_response.json()["detail"] == "Este complejo está desactivado"
+
+    admin_login_response = client.post(
+        "/auth/login",
+        data={"username": "owner-inactivo@saas.com", "password": "password123"},
+        headers={"X-Organization-Slug": "complejo-inactivo"},
+    )
+    assert admin_login_response.status_code == 200
+
+    current_org_response = client.get(
+        "/organizations/current",
+        headers=auth_headers(admin_login_response.json()["access_token"]),
+    )
+    assert current_org_response.status_code == 200
+    assert current_org_response.json()["is_active"] is False
+
+
 def test_booking_policies_use_organization_defaults_when_sport_has_no_override(client):
     onboard_response = client.post(
         "/organizations/onboard",
@@ -2590,4 +2701,52 @@ def test_admin_readiness_reflects_operational_setup(client, db_session):
     assert ready_payload["summary"]["is_ready"] is True
     assert ready_payload["summary"]["readiness_percent"] == 100
     assert ready_payload["summary"]["missing_items"] == []
+
+
+def test_admin_audit_events_capture_sensitive_actions(client, db_session):
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Audit",
+            "organization_slug": "complejo-audit",
+            "admin_full_name": "Audit Admin",
+            "admin_email": "audit-admin@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+
+    update_org_response = client.patch(
+        "/organizations/current",
+        json={"name": "Complejo Audit Norte", "is_active": False},
+        headers=auth_headers(admin_token),
+    )
+    assert update_org_response.status_code == 200
+
+    invitation_response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+            "email": "audit-staff@saas.com",
+            "full_name": "Audit Staff",
+            "role": "staff",
+            "expires_in_days": 7,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert invitation_response.status_code == 201
+
+    audit_response = client.get("/admin/audit-events", headers=auth_headers(admin_token))
+    assert audit_response.status_code == 200
+    payload = audit_response.json()
+    assert any(event["action"] == "organization.updated" for event in payload)
+    assert any(event["action"] == "staff.invitation.created" for event in payload)
+
+    stored_events = (
+        db_session.query(AdminAuditEvent)
+        .filter(AdminAuditEvent.organization_id == onboard_response.json()["organization"]["id"])
+        .order_by(AdminAuditEvent.created_at.desc())
+        .all()
+    )
+    assert len(stored_events) >= 2
 

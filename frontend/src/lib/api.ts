@@ -167,6 +167,17 @@ export type AdminReadiness = {
   items: AdminReadinessItem[];
 };
 
+export type AdminAuditEvent = {
+  id: string;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  summary: string;
+  actor_email: string;
+  actor_name: string | null;
+  created_at: string;
+};
+
 export type NotificationStatus = {
   provider: string;
   enabled: boolean;
@@ -584,6 +595,9 @@ export const api = {
   },
 
   getAdminReadiness: () => request<AdminReadiness>("/admin/readiness", { auth: true }),
+
+  listAdminAuditEvents: (limit = 20) =>
+    request<AdminAuditEvent[]>(`/admin/audit-events?limit=${limit}`, { auth: true }),
 
   getNotificationStatus: () => request<NotificationStatus>("/admin/notification-status", { auth: true }),
 

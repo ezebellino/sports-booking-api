@@ -12,10 +12,12 @@ from app.api.deps.auth import (
     require_manage_whatsapp,
     require_view_metrics,
 )
+from app.core.admin_audit import record_admin_audit_event
 from app.api.routes.auth import serialize_user
 from app.core.holidays import HolidayProviderError, fetch_public_holidays, filter_holidays_by_month
 from app.core.organization_settings import get_or_create_organization_settings
 from app.core.whatsapp import notification_status_payload
+from app.models.admin_audit_event import AdminAuditEvent
 from app.models.organization import Organization
 from app.models.organization_sport import OrganizationSport
 from app.db.session import get_db
@@ -25,6 +27,7 @@ from app.models.timeslot import TimeSlot
 from app.models.user import User
 from app.models.venue import Venue
 from app.schemas.admin import (
+    AdminAuditEventPublic,
     AdminReadinessItem,
     AdminReadinessPublic,
     AdminReadinessSummary,
@@ -43,6 +46,35 @@ from app.schemas.user import UserPublic
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 INACTIVE_COURT_BULK_DETAIL = "No se pueden generar turnos sobre canchas inactivas"
+
+
+@router.get("/audit-events", response_model=list[AdminAuditEventPublic])
+def list_admin_audit_events(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_manage_organization),
+):
+    events = (
+        db.query(AdminAuditEvent)
+        .options(joinedload(AdminAuditEvent.actor_user))
+        .filter(AdminAuditEvent.organization_id == current_admin.organization_id)
+        .order_by(AdminAuditEvent.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        AdminAuditEventPublic(
+            id=str(event.id),
+            action=event.action,
+            target_type=event.target_type,
+            target_id=event.target_id,
+            summary=event.summary,
+            actor_email=event.actor_user.email,
+            actor_name=event.actor_user.full_name,
+            created_at=event.created_at.isoformat(),
+        )
+        for event in events
+    ]
 
 
 @router.get("/readiness", response_model=AdminReadinessPublic)
@@ -472,6 +504,21 @@ def bulk_create_timeslots(
     db.commit()
     for timeslot in created_slots:
         db.refresh(timeslot)
+
+    record_admin_audit_event(
+        db,
+        organization_id=current_admin.organization_id,
+        actor_user_id=current_admin.id,
+        action="timeslots.bulk_created",
+        target_type="timeslot",
+        summary=f"Generó {len(created_slots)} turnos masivos en {len(courts)} canchas.",
+        details={
+            "created_count": len(created_slots),
+            "skipped_count": len(skipped_reasons),
+            "court_ids": [str(court.id) for court in courts],
+        },
+    )
+    db.commit()
 
     return TimeSlotBulkCreateResult(
         created_count=len(created_slots),

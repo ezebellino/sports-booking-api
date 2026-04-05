@@ -3,6 +3,7 @@ import {
   Building2,
   CircleAlert,
   CircleCheckBig,
+  History,
   ImageUp,
   LoaderCircle,
   Palette,
@@ -51,6 +52,10 @@ export function AdminOrganizationPage() {
   const readinessQuery = useQuery({
     queryKey: ["admin-readiness"],
     queryFn: api.getAdminReadiness,
+  });
+  const auditEventsQuery = useQuery({
+    queryKey: ["admin-audit-events"],
+    queryFn: () => api.listAdminAuditEvents(12),
   });
 
   const [name, setName] = useState("");
@@ -170,6 +175,7 @@ export function AdminOrganizationPage() {
       setSuccess("Perfil del complejo actualizado correctamente.");
       void organizationQuery.refetch();
       void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-audit-events"] });
       void queryClient.invalidateQueries({ queryKey: ["request-organization-context"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization"] });
     },
@@ -186,6 +192,7 @@ export function AdminOrganizationPage() {
       setSuccess("Branding y política general actualizados correctamente.");
       void settingsQuery.refetch();
       void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-audit-events"] });
       void queryClient.invalidateQueries({ queryKey: ["request-organization-context"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization-settings"] });
     },
@@ -205,6 +212,7 @@ export function AdminOrganizationPage() {
       setSuccess("Deportes habilitados actualizados correctamente.");
       void organizationSportsQuery.refetch();
       void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-audit-events"] });
       void queryClient.invalidateQueries({ queryKey: ["sports"] });
       void queryClient.invalidateQueries({ queryKey: ["venues"] });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
@@ -227,6 +235,7 @@ export function AdminOrganizationPage() {
       setError(null);
       setSuccess("Deporte creado y habilitado para este complejo.");
       void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-audit-events"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization-sports"] });
       void queryClient.invalidateQueries({ queryKey: ["sports"] });
       void queryClient.invalidateQueries({ queryKey: ["venues"] });
@@ -251,6 +260,7 @@ export function AdminOrganizationPage() {
       setError(null);
       setSuccess("Logo actualizado correctamente.");
       void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-audit-events"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization-settings"] });
       void queryClient.invalidateQueries({ queryKey: ["request-organization-context"] });
     },
@@ -368,7 +378,8 @@ export function AdminOrganizationPage() {
     organizationQuery.isLoading ||
     settingsQuery.isLoading ||
     organizationSportsQuery.isLoading ||
-    readinessQuery.isLoading
+    readinessQuery.isLoading ||
+    auditEventsQuery.isLoading
   ) {
     return (
       <>
@@ -460,6 +471,44 @@ export function AdminOrganizationPage() {
           </div>
         ) : null}
 
+        {auditEventsQuery.data ? (
+          <div className="shell-card space-y-5 p-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+                <History size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-950">Actividad administrativa reciente</h3>
+                <p className="text-sm text-slate-500">
+                  Últimas acciones sensibles registradas para este complejo.
+                </p>
+              </div>
+            </div>
+
+            {auditEventsQuery.data.length ? (
+              <div className="space-y-3">
+                {auditEventsQuery.data.map((event) => (
+                  <div key={event.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="font-semibold text-slate-950">{event.summary}</p>
+                      <span className="text-xs font-medium text-slate-500">
+                        {new Date(event.created_at).toLocaleString("es-AR")}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600">
+                      {event.actor_name || event.actor_email} · {event.action}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Todavía no hay acciones auditadas para este complejo.
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
           <form className="shell-card space-y-5 p-6" onSubmit={handleOrganizationSubmit} data-tour="org-profile">
             <div className="flex items-center gap-3">
@@ -493,6 +542,11 @@ export function AdminOrganizationPage() {
                 />
                 Mantener este complejo activo
               </label>
+
+              <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Si desactivás el complejo, se bloquea el acceso público, el registro y el login de usuarios operativos.
+                Los administradores del complejo podrán seguir entrando para reactivarlo.
+              </div>
             </div>
 
             <button className="btn-primary" type="submit" disabled={updateOrganizationMutation.isPending}>
