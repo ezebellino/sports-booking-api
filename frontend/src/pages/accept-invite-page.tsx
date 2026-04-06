@@ -2,6 +2,7 @@ import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
+import { buildTenantPath } from "../lib/tenant";
 import {
   normalizePhone,
   validateFullName,
@@ -59,14 +60,14 @@ export function AcceptInvitePage() {
 
     setLoading(true);
     try {
-      await acceptStaffInvitation({
+      const currentUser = await acceptStaffInvitation({
         token,
         full_name: fullName.trim(),
         password: password.trim(),
         whatsapp_number: normalizePhone(whatsappNumber) || null,
         whatsapp_opt_in: whatsappOptIn,
       });
-      navigate("/explore");
+      navigate(buildTenantPath("/explore", currentUser.organization_slug), { replace: true });
     } catch (submissionError) {
       setSubmitError(submissionError instanceof Error ? submissionError.message : "No pudimos aceptar la invitación.");
     } finally {

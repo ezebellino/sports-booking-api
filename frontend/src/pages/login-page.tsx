@@ -5,7 +5,7 @@ import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
 import { api } from "../lib/api";
 import { getBrandColor } from "../lib/branding";
-import { useTenantPath, useTenantSlug } from "../lib/tenant";
+import { buildTenantPath, useTenantPath, useTenantSlug } from "../lib/tenant";
 import { normalizeEmail, validateEmail, validatePassword } from "../lib/validation";
 import { useAuth } from "../modules/auth/auth-context";
 
@@ -72,8 +72,8 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      await login({ email: normalizeEmail(email), password: password.trim() });
-      navigate(tenantPath("/explore"));
+      const currentUser = await login({ email: normalizeEmail(email), password: password.trim() });
+      navigate(buildTenantPath("/explore", currentUser.organization_slug), { replace: true });
     } catch (submissionError) {
       setSubmitError(submissionError instanceof Error ? submissionError.message : "No pudimos iniciar sesión.");
     } finally {

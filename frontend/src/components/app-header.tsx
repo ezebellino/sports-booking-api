@@ -1,14 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { CalendarCheck2, MapPinned, Shield, Ticket } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { CalendarCheck2, LoaderCircle, MapPinned, Shield, Ticket } from "lucide-react";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { getBrandColor } from "../lib/branding";
-import { useTenantPath, useTenantSlug } from "../lib/tenant";
+import { buildTenantPath, useTenantPath, useTenantSlug } from "../lib/tenant";
 import { useAuth } from "../modules/auth/auth-context";
 
 export function AppHeader() {
-  const { canAccessAdmin, isAuthenticated, logout, user } = useAuth();
+  const navigate = useNavigate();
+  const { canAccessAdmin, hasMultipleOrganizations, isAuthenticated, logout, switchOrganization, user } = useAuth();
   const tenantPath = useTenantPath();
   const tenantSlug = useTenantSlug();
   const contextQuery = useQuery({
@@ -27,6 +28,22 @@ export function AppHeader() {
   const logoUrl = contextQuery.data?.logo_url ?? null;
   const titleLabel = tenantSlug ? publicBrandLabel : "Reservas deportivas";
   const subtitleLabel = tenantSlug ? "Reservas deportivas" : "Sports Booking";
+  const [isSwitching, setIsSwitching] = useState(false);
+
+  async function handleOrganizationChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const nextOrganizationId = event.target.value;
+    if (!nextOrganizationId || !user || nextOrganizationId === user.organization_id) {
+      return;
+    }
+
+    setIsSwitching(true);
+    try {
+      const nextUser = await switchOrganization(nextOrganizationId);
+      navigate(buildTenantPath("/explore", nextUser.organization_slug), { replace: true });
+    } finally {
+      setIsSwitching(false);
+    }
+  }
 
   return (
     <header className="mb-6 flex flex-col gap-4 pt-2">
@@ -115,6 +132,28 @@ export function AppHeader() {
                   ? "Puede operar sedes, canchas, turnos y métricas del complejo."
                   : "Puede registrarse, explorar turnos y administrar sus propias reservas."}
             </p>
+            {hasMultipleOrganizations ? (
+              <div className="mt-3 max-w-sm">
+                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Complejo activo
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="field py-2 text-sm"
+                    value={user.organization_id ?? ""}
+                    onChange={handleOrganizationChange}
+                    disabled={isSwitching}
+                  >
+                    {user.memberships.map((membership) => (
+                      <option key={membership.organization_id} value={membership.organization_id}>
+                        {membership.organization_name} · {membership.role}
+                      </option>
+                    ))}
+                  </select>
+                  {isSwitching ? <LoaderCircle className="animate-spin text-slate-400" size={16} /> : null}
+                </div>
+              </div>
+            ) : null}
           </div>
           <button className="btn-secondary md:hidden" onClick={logout} type="button">
             Salir

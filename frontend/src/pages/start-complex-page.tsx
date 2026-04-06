@@ -2,6 +2,7 @@ import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
+import { buildTenantPath } from "../lib/tenant";
 import { normalizeEmail, normalizePhone, validateEmail, validateFullName, validatePassword } from "../lib/validation";
 import { useAuth } from "../modules/auth/auth-context";
 
@@ -51,7 +52,7 @@ export function StartComplexPage() {
 
     setLoading(true);
     try {
-      await onboardOrganization({
+      const currentUser = await onboardOrganization({
         organization_name: organizationName.trim(),
         organization_slug: organizationSlug.trim() || null,
         admin_full_name: adminFullName.trim(),
@@ -60,7 +61,7 @@ export function StartComplexPage() {
         whatsapp_number: normalizePhone(whatsappNumber) || null,
         whatsapp_opt_in: whatsappOptIn,
       });
-      navigate("/admin/organization");
+      navigate(buildTenantPath("/admin/organization", currentUser.organization_slug), { replace: true });
     } catch (submissionError) {
       setSubmitError(submissionError instanceof Error ? submissionError.message : "No pudimos crear el complejo.");
     } finally {

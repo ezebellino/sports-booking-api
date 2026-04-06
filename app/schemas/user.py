@@ -15,6 +15,16 @@ class UserPermissionsPublic(BaseModel):
     manage_whatsapp: bool
 
 
+class UserMembershipPublic(BaseModel):
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
+    role: UserRole
+    is_default: bool
+    is_active: bool
+    organization_is_active: bool
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -58,3 +68,4 @@ class UserPublic(BaseModel):
     whatsapp_number: str | None = None
     whatsapp_opt_in: bool
     permissions: UserPermissionsPublic
+    memberships: list[UserMembershipPublic] = []

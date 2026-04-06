@@ -62,44 +62,53 @@ export function AdminInventoryPage() {
   const [courtStatusFilter, setCourtStatusFilter] = useState("all");
 
   const sportsQuery = useQuery({
-    queryKey: ["sports"],
-    queryFn: api.listSports,
+    queryKey: ["organizations", "current", "sports", "admin-inventory"],
+    queryFn: api.listCurrentOrganizationSports,
   });
 
   const venuesQuery = useQuery({
-    queryKey: ["venues", "admin-inventory"],
-    queryFn: () => api.listVenues(null),
+    queryKey: ["organizations", "current", "venues", "admin-inventory"],
+    queryFn: api.listCurrentOrganizationVenues,
   });
 
   const courtsQuery = useQuery({
-    queryKey: ["courts", "admin-inventory"],
-    queryFn: () => api.listCourts({}),
+    queryKey: ["organizations", "current", "courts", "admin-inventory"],
+    queryFn: api.listCurrentOrganizationCourts,
   });
 
   const sportsById = useMemo(
-    () => new Map((sportsQuery.data ?? []).map((sport) => [sport.id, sport])),
+    () =>
+      new Map(
+        (sportsQuery.data ?? [])
+          .filter((row) => row.is_enabled)
+          .map((row) => [row.sport.id, row.sport]),
+      ),
     [sportsQuery.data],
   );
   const venuesById = useMemo(
     () => new Map((venuesQuery.data ?? []).map((venue) => [venue.id, venue])),
     [venuesQuery.data],
   );
+  const enabledSports = useMemo(
+    () => (sportsQuery.data ?? []).filter((row) => row.is_enabled).map((row) => row.sport),
+    [sportsQuery.data],
+  );
 
   const availableSportsForCourt = useMemo(() => {
     const selectedVenue = courtVenueId ? venuesById.get(courtVenueId) ?? null : null;
     if (!selectedVenue?.allowed_sport_id) {
-      return sportsQuery.data ?? [];
+      return enabledSports;
     }
-    return (sportsQuery.data ?? []).filter((sport) => sport.id === selectedVenue.allowed_sport_id);
-  }, [courtVenueId, sportsQuery.data, venuesById]);
+    return enabledSports.filter((sport) => sport.id === selectedVenue.allowed_sport_id);
+  }, [courtVenueId, enabledSports, venuesById]);
 
   const availableEditSportsForCourt = useMemo(() => {
     const selectedVenue = editCourtVenueId ? venuesById.get(editCourtVenueId) ?? null : null;
     if (!selectedVenue?.allowed_sport_id) {
-      return sportsQuery.data ?? [];
+      return enabledSports;
     }
-    return (sportsQuery.data ?? []).filter((sport) => sport.id === selectedVenue.allowed_sport_id);
-  }, [editCourtVenueId, sportsQuery.data, venuesById]);
+    return enabledSports.filter((sport) => sport.id === selectedVenue.allowed_sport_id);
+  }, [editCourtVenueId, enabledSports, venuesById]);
 
   const filteredVenues = useMemo(() => {
     const search = venueSearch.trim().toLowerCase();
@@ -137,8 +146,9 @@ export function AdminInventoryPage() {
   }, [courtSearch, courtSportFilter, courtStatusFilter, courtVenueFilter, courtsQuery.data, sportsById, venuesById]);
 
   function invalidateInventoryQueries() {
-    void queryClient.invalidateQueries({ queryKey: ["venues"] });
-    void queryClient.invalidateQueries({ queryKey: ["courts"] });
+    void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "sports"] });
+    void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "venues"] });
+    void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "courts"] });
     void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
   }
 
@@ -364,6 +374,11 @@ export function AdminInventoryPage() {
   }
 
   const inventoryLoading = sportsQuery.isLoading || venuesQuery.isLoading || courtsQuery.isLoading;
+  const inventoryError =
+    (sportsQuery.error instanceof Error && sportsQuery.error.message) ||
+    (venuesQuery.error instanceof Error && venuesQuery.error.message) ||
+    (courtsQuery.error instanceof Error && courtsQuery.error.message) ||
+    null;
 
   return (
     <>
@@ -418,7 +433,7 @@ export function AdminInventoryPage() {
                   </label>
                   <select id="venue-sport" className="field" value={venueAllowedSportId} onChange={(event) => setVenueAllowedSportId(event.target.value)}>
                     <option value="">Todos los deportes</option>
-                    {(sportsQuery.data ?? []).map((sport) => (
+                    {enabledSports.map((sport) => (
                       <option key={sport.id} value={sport.id}>
                         {sport.name}
                       </option>
@@ -561,7 +576,7 @@ export function AdminInventoryPage() {
                 />
                 <select className="field" value={venueSportFilter} onChange={(event) => setVenueSportFilter(event.target.value)}>
                   <option value="">Todos los deportes</option>
-                  {(sportsQuery.data ?? []).map((sport) => (
+                  {enabledSports.map((sport) => (
                     <option key={sport.id} value={sport.id}>
                       {sport.name}
                     </option>
@@ -572,7 +587,11 @@ export function AdminInventoryPage() {
                 </div>
               </div>
 
-              {inventoryLoading ? (
+              {inventoryError ? (
+                <div className="mt-4">
+                  <Feedback tone="error" message={inventoryError} />
+                </div>
+              ) : inventoryLoading ? (
                 <div className="mt-4">
                   <LoadingCard label="Cargando inventario..." />
                 </div>
@@ -616,7 +635,7 @@ export function AdminInventoryPage() {
                               <input className="field" value={editVenueTimezone} onChange={(event) => setEditVenueTimezone(event.target.value)} placeholder="Zona horaria" />
                               <select className="field" value={editVenueAllowedSportId} onChange={(event) => setEditVenueAllowedSportId(event.target.value)}>
                                 <option value="">Todos los deportes</option>
-                                {(sportsQuery.data ?? []).map((sport) => (
+                                {enabledSports.map((sport) => (
                                   <option key={sport.id} value={sport.id}>
                                     {sport.name}
                                   </option>
@@ -683,7 +702,7 @@ export function AdminInventoryPage() {
                 </select>
                 <select className="field" value={courtSportFilter} onChange={(event) => setCourtSportFilter(event.target.value)}>
                   <option value="">Todos los deportes</option>
-                  {(sportsQuery.data ?? []).map((sport) => (
+                  {enabledSports.map((sport) => (
                     <option key={sport.id} value={sport.id}>
                       {sport.name}
                     </option>
@@ -699,7 +718,11 @@ export function AdminInventoryPage() {
                 </div>
               </div>
 
-              {inventoryLoading ? (
+              {inventoryError ? (
+                <div className="mt-4">
+                  <Feedback tone="error" message={inventoryError} />
+                </div>
+              ) : inventoryLoading ? (
                 <div className="mt-4">
                   <LoadingCard label="Cargando canchas..." />
                 </div>

@@ -16,8 +16,8 @@ from app.db.session import get_db
 from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
-from app.schemas.auth import RefreshRequest, TokenPair
-from app.schemas.user import UserCreate, UserPermissionsPublic, UserPublic, UserUpdate
+from app.schemas.auth import RefreshRequest, SwitchOrganizationRequest, TokenPair
+from app.schemas.user import UserCreate, UserMembershipPublic, UserPermissionsPublic, UserPublic, UserUpdate
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -217,11 +217,38 @@ def build_user_permissions(user: User) -> UserPermissionsPublic:
     )
 
 
+def serialize_memberships(user: User, memberships: list[OrganizationMembership]) -> list[UserMembershipPublic]:
+    active_membership = getattr(user, "_active_membership", None)
+    active_organization_id = (
+        str(active_membership.organization_id)
+        if active_membership is not None
+        else (str(user.organization_id) if user.organization_id else None)
+    )
+    serialized: list[UserMembershipPublic] = []
+    for membership in memberships:
+        organization = membership.organization
+        if organization is None:
+            continue
+        serialized.append(
+            UserMembershipPublic(
+                organization_id=membership.organization_id,
+                organization_name=organization.name,
+                organization_slug=organization.slug,
+                role=membership.role,
+                is_default=membership.is_default,
+                is_active=str(membership.organization_id) == active_organization_id,
+                organization_is_active=organization.is_active,
+            )
+        )
+    return serialized
+
+
 def serialize_user(user: User, db: Session | None = None) -> UserPublic:
     active_membership = getattr(user, "_active_membership", None)
     if db is not None and active_membership is None:
         user = ensure_user_can_access_organization(db, user)
         active_membership = getattr(user, "_active_membership", None)
+    memberships = list_user_memberships(db, user) if db is not None else []
 
     active_organization = (
         active_membership.organization
@@ -246,6 +273,7 @@ def serialize_user(user: User, db: Session | None = None) -> UserPublic:
         whatsapp_number=user.whatsapp_number,
         whatsapp_opt_in=user.whatsapp_opt_in,
         permissions=build_user_permissions(user),
+        memberships=serialize_memberships(user, memberships),
     )
 
 
@@ -374,6 +402,19 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
         strict=bool(refresh_organization_id),
     )
 
+    tokens = build_auth_payload(db, user)
+    return TokenPair(access_token=tokens["access_token"], refresh_token=tokens["refresh_token"])
+
+
+@router.post("/switch-organization", response_model=TokenPair)
+def switch_organization(payload: SwitchOrganizationRequest, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    user = get_current_user_from_token(token, db)
+    user = ensure_user_can_access_organization(
+        db,
+        user,
+        organization_id=payload.organization_id,
+        strict=True,
+    )
     tokens = build_auth_payload(db, user)
     return TokenPair(access_token=tokens["access_token"], refresh_token=tokens["refresh_token"])
 

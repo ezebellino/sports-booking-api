@@ -2549,6 +2549,9 @@ def test_login_without_requested_slug_uses_default_membership(client, db_session
     assert payload["organization_slug"] == "tenant-default-a"
     assert payload["role"] == "staff"
     assert payload["permissions"]["manage_organization"] is False
+    assert len(payload["memberships"]) == 2
+    assert any(item["organization_slug"] == "tenant-default-a" and item["is_active"] for item in payload["memberships"])
+    assert any(item["organization_slug"] == "tenant-default-b" and not item["is_active"] for item in payload["memberships"])
 
 
 def test_access_token_rejects_removed_membership_context(client, db_session):
@@ -2605,6 +2608,62 @@ def test_access_token_rejects_removed_membership_context(client, db_session):
     refresh_response = client.post("/auth/refresh", json={"refresh_token": refresh_token})
     assert refresh_response.status_code == 403
     assert refresh_response.json()["detail"] == "Esta cuenta pertenece a otro complejo"
+
+
+def test_switch_organization_changes_active_membership_context(client, db_session):
+    org_a = Organization(name="Tenant Switch A", slug="tenant-switch-a", is_active=True)
+    org_b = Organization(name="Tenant Switch B", slug="tenant-switch-b", is_active=True)
+    db_session.add_all([org_a, org_b])
+    db_session.flush()
+
+    user = User(
+        email="switch-membership@example.com",
+        full_name="Switch Membership",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+        organization_id=org_a.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_a.id,
+                role="user",
+                is_default=True,
+            ),
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_b.id,
+                role="admin",
+                is_default=False,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "switch-membership@example.com", "password": "password123"},
+    )
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+
+    switch_response = client.post(
+        "/auth/switch-organization",
+        json={"organization_id": str(org_b.id)},
+        headers=auth_headers(access_token),
+    )
+    assert switch_response.status_code == 200
+
+    me_response = client.get("/auth/me", headers=auth_headers(switch_response.json()["access_token"]))
+    assert me_response.status_code == 200
+    payload = me_response.json()
+    assert payload["organization_slug"] == "tenant-switch-b"
+    assert payload["role"] == "admin"
+    assert any(item["organization_slug"] == "tenant-switch-b" and item["is_active"] for item in payload["memberships"])
 
 
 def test_inactive_organization_blocks_public_context_and_registration(client):

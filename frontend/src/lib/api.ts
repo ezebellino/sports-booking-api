@@ -14,6 +14,17 @@ export type User = {
   whatsapp_number: string | null;
   whatsapp_opt_in: boolean;
   permissions: UserPermissions;
+  memberships: UserMembership[];
+};
+
+export type UserMembership = {
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
+  role: "admin" | "staff" | "user";
+  is_default: boolean;
+  is_active: boolean;
+  organization_is_active: boolean;
 };
 
 export type UserPermissions = {
@@ -429,6 +440,14 @@ export const api = {
     });
   },
 
+  switchOrganization: (organizationId: string) =>
+    request<{ access_token: string; refresh_token: string }>("/auth/switch-organization", {
+      method: "POST",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organization_id: organizationId }),
+    }),
+
   me: () => request<User>("/auth/me", { auth: true }),
 
   updateMe: (input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) =>
@@ -557,6 +576,12 @@ export const api = {
 
   listCurrentOrganizationSports: () =>
     request<OrganizationSport[]>("/organizations/current/sports", { auth: true }),
+
+  listCurrentOrganizationVenues: () =>
+    request<Venue[]>("/organizations/current/venues", { auth: true }),
+
+  listCurrentOrganizationCourts: () =>
+    request<Court[]>("/organizations/current/courts", { auth: true }),
 
   updateCurrentOrganizationSports: (enabledSportIds: string[]) =>
     request<OrganizationSport[]>("/organizations/current/sports", {

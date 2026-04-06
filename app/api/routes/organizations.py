@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import (
     get_request_organization,
+    require_manage_inventory,
     require_manage_organization,
     require_manage_staff,
     require_manage_whatsapp,
@@ -27,6 +28,9 @@ from app.models.organization_sport import OrganizationSport
 from app.models.sport import Sport
 from app.models.staff_invitation import StaffInvitation
 from app.models.user import User
+from app.models.venue import Venue
+from app.models.court import Court
+from app.schemas.court import CourtPublic
 from app.schemas.organization import (
     OrganizationOnboardingCreate,
     OrganizationOnboardingPublic,
@@ -43,6 +47,7 @@ from app.schemas.organization import (
     StaffInvitationPublic,
 )
 from app.schemas.sport import OrganizationSportPublic, SportPublic
+from app.schemas.venue import VenuePublic
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
@@ -276,7 +281,7 @@ def get_current_organization_settings(
 @router.get("/current/sports", response_model=list[OrganizationSportPublic])
 def list_current_organization_sports(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_manage_organization),
+    current_admin: User = Depends(require_manage_inventory),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -322,6 +327,42 @@ def update_current_organization_sports(
         db.refresh(row)
 
     return [OrganizationSportPublic(sport=SportPublic.model_validate(row.sport), is_enabled=row.is_enabled) for row in rows]
+
+
+@router.get("/current/venues", response_model=list[VenuePublic])
+def list_current_organization_venues(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_manage_inventory),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+
+    return (
+        db.query(Venue)
+        .filter(Venue.organization_id == organization.id)
+        .order_by(Venue.name.asc())
+        .all()
+    )
+
+
+@router.get("/current/courts", response_model=list[CourtPublic])
+def list_current_organization_courts(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_manage_inventory),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+
+    return (
+        db.query(Court)
+        .filter(Court.organization_id == organization.id)
+        .order_by(Court.name.asc())
+        .all()
+    )
 
 
 @router.patch("/current/settings", response_model=OrganizationSettingsPublic)
