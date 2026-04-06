@@ -131,8 +131,8 @@ export function AdminTimeslotsPage() {
   const monthBounds = useMemo(() => getMonthDateBounds(scheduleMonth), [scheduleMonth]);
 
   const sportsQuery = useQuery({
-    queryKey: ["sports"],
-    queryFn: api.listSports,
+    queryKey: ["organizations", "current", "sports", "timeslots-admin"],
+    queryFn: api.listCurrentOrganizationSports,
   });
 
   const activePolicyQuery = useQuery({
@@ -150,13 +150,13 @@ export function AdminTimeslotsPage() {
   });
 
   const venuesQuery = useQuery({
-    queryKey: ["venues", "timeslots-admin"],
-    queryFn: () => api.listVenues(null),
+    queryKey: ["organizations", "current", "venues", "timeslots-admin"],
+    queryFn: api.listCurrentOrganizationVenues,
   });
 
   const courtsQuery = useQuery({
-    queryKey: ["courts", "all-admin"],
-    queryFn: () => api.listCourts({}),
+    queryKey: ["organizations", "current", "courts", "timeslots-admin"],
+    queryFn: api.listCurrentOrganizationCourts,
   });
 
   const timeslotsQuery = useQuery({
@@ -177,9 +177,13 @@ export function AdminTimeslotsPage() {
       }),
   });
 
-  const sportsById = useMemo(
-    () => new Map((sportsQuery.data ?? []).map((sport) => [sport.id, sport])),
+  const enabledSports = useMemo(
+    () => (sportsQuery.data ?? []).filter((sport) => sport.is_enabled).map((sport) => sport.sport),
     [sportsQuery.data],
+  );
+  const sportsById = useMemo(
+    () => new Map(enabledSports.map((sport) => [sport.id, sport])),
+    [enabledSports],
   );
   const venuesById = useMemo(
     () => new Map((venuesQuery.data ?? []).map((venue) => [venue.id, venue])),
@@ -189,6 +193,7 @@ export function AdminTimeslotsPage() {
     () => new Map((courtsQuery.data ?? []).map((court) => [court.id, court])),
     [courtsQuery.data],
   );
+  const supportDataError = [sportsQuery.error, venuesQuery.error, courtsQuery.error].find(Boolean);
 
   const filteredVenues = useMemo(() => {
     return (venuesQuery.data ?? []).filter((venue) => {
@@ -571,7 +576,7 @@ export function AdminTimeslotsPage() {
             </label>
             <select id="timeslot-sport-filter" className="field" value={filterSportId} onChange={(event) => setFilterSportId(event.target.value)}>
               <option value="">Todos los deportes</option>
-              {(sportsQuery.data ?? []).map((sport) => (
+              {enabledSports.map((sport) => (
                 <option key={sport.id} value={sport.id}>
                   {sport.name}
                 </option>
@@ -609,6 +614,14 @@ export function AdminTimeslotsPage() {
             <input id="timeslot-date-filter-header" className="field" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
           </div>
         </div>
+
+        {supportDataError ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {supportDataError instanceof Error
+              ? supportDataError.message
+              : "No pudimos cargar deportes, sedes o canchas del complejo activo."}
+          </div>
+        ) : null}
 
         {activePolicyQuery.data ? (
           <div className="shell-card flex items-start gap-3 p-4 text-sm text-slate-600">

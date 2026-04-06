@@ -14,8 +14,19 @@ export function HomePage() {
   const { canAccessAdmin, isAuthenticated, isAdmin, user } = useAuth();
   const tenantPath = useTenantPath();
   const tenantSlug = useTenantSlug();
-  const sportsQuery = useQuery({ queryKey: ["sports", tenantSlug ?? "default"], queryFn: api.listSports });
-  const venuesQuery = useQuery({ queryKey: ["venues", tenantSlug ?? "default"], queryFn: () => api.listVenues(null) });
+  const sportsQuery = useQuery({
+    queryKey: ["home-sports", isAuthenticated ? user?.organization_id ?? "auth" : tenantSlug ?? "default"],
+    queryFn: () =>
+      isAuthenticated
+        ? api.listCurrentOrganizationSports().then((sports) =>
+            sports.filter((sport) => sport.is_enabled).map((sport) => sport.sport),
+          )
+        : api.listSports(),
+  });
+  const venuesQuery = useQuery({
+    queryKey: ["home-venues", isAuthenticated ? user?.organization_id ?? "auth" : tenantSlug ?? "default"],
+    queryFn: () => (isAuthenticated ? api.listCurrentOrganizationVenues() : api.listVenues(null)),
+  });
   const contextQuery = useQuery({
     queryKey: ["request-organization-context", tenantSlug ?? "default"],
     queryFn: api.getRequestOrganizationContext,
