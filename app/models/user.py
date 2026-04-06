@@ -48,3 +48,4 @@ class User(Base):
     bookings = relationship("Booking", back_populates="user", cascade="all, delete-orphan")
     admin_audit_events = relationship("AdminAuditEvent")
     organization = relationship("Organization", back_populates="users")
+    organization_memberships = relationship("OrganizationMembership", back_populates="user", cascade="all, delete-orphan")

@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.auth import (
     build_user_permissions,
-    ensure_user_organization,
     ensure_user_can_access_organization,
     get_default_organization,
     ensure_public_organization_is_active,
@@ -41,7 +40,13 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
-    return ensure_user_can_access_organization(db, user)
+    token_organization_id = payload.get("organization_id")
+    return ensure_user_can_access_organization(
+        db,
+        user,
+        organization_id=token_organization_id,
+        strict=bool(token_organization_id),
+    )
 
 
 def get_optional_current_user(token: str | None = Depends(oauth2_optional), db: Session = Depends(get_db)) -> User | None:
@@ -58,8 +63,14 @@ def get_optional_current_user(token: str | None = Depends(oauth2_optional), db: 
     user = db.get(User, user_id)
     if not user:
         return None
+    token_organization_id = payload.get("organization_id")
     try:
-        return ensure_user_can_access_organization(db, user)
+        return ensure_user_can_access_organization(
+            db,
+            user,
+            organization_id=token_organization_id,
+            strict=bool(token_organization_id),
+        )
     except HTTPException:
         return None
 

@@ -150,7 +150,7 @@ Estado: `in_progress`
 ## Phase S6: SaaS Operations
 Objetivo: preparar la plataforma para clientes reales.
 
-Estado: `pending`
+Estado: `closed`
 
 ### Task S6.1
 Checklist de alta de nuevo complejo.
@@ -174,10 +174,43 @@ Auditoría básica de acciones admin.
 ### Definition of Done
 - Un complejo puede darse de alta, configurarse y salir a producción con proceso claro.
 
+## Phase S7: Multi-Organization Memberships
+Objetivo: permitir que una misma cuenta pertenezca a múltiples complejos y pueda elegir con cuál operar.
+
+Estado: `in_progress`
+
+### Problema actual
+- `users.organization_id` fuerza un único complejo por cuenta.
+- crear un nuevo complejo mueve al usuario al nuevo tenant.
+- aceptar invitaciones reescribe pertenencia en vez de sumar una nueva.
+
+### Estrategia adoptada
+- introducir tabla `organization_memberships`
+- usar membership activa como contexto real de auth y permisos
+- mantener `users.organization_id` solo como compatibilidad temporal durante la migración
+
+### Tareas
+- `S7.1` schema + backfill
+  estado: `closed`
+- `S7.2` auth y permisos por membership activa
+  estado: `closed`
+- `S7.3` onboarding e invitaciones suman memberships
+  estado: `closed`
+- `S7.4` selector y switcher de complejo en frontend
+- `S7.5` cleanup del modelo legado
+
+### Referencia
+- [ORG_MEMBERSHIPS_MIGRATION_PLAN.md](c:/ProjectsZeqe/sports-booking/ORG_MEMBERSHIPS_MIGRATION_PLAN.md)
+
+### Definition of Done
+- una cuenta puede administrar varios complejos sin perder acceso al anterior
+- login y sesión respetan el complejo activo
+- invitaciones y onboarding agregan membresías, no reemplazan pertenencia
+
 ## Recommended Order
 1. S4 Real Branding
 2. S5 Staff Permissions
-3. S6 SaaS Operations
+3. S7 Multi-Organization Memberships
 
 ## About Existing Plans
 

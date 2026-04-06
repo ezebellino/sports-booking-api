@@ -24,8 +24,10 @@ def create_access_token(subject: str, extra: Optional[dict[str, Any]] = None) ->
         to_encode.update(extra)
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-def create_refresh_token(subject: str) -> str:
+def create_refresh_token(subject: str, extra: Optional[dict[str, Any]] = None) -> str:
     to_encode = {"sub": subject, "exp": _expire_days(settings.REFRESH_TOKEN_DAYS), "type":"refresh"}
+    if extra:
+        to_encode.update(extra)
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def decode_token(token: str) -> dict[str, Any]:

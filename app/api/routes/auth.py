@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.security import (
     create_access_token,
@@ -9,9 +10,11 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
+from app.core.organization_memberships import ensure_membership
 from app.core.whatsapp import normalize_whatsapp_number
 from app.db.session import get_db
 from app.models.organization import Organization
+from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
 from app.schemas.auth import RefreshRequest, TokenPair
 from app.schemas.user import UserCreate, UserPermissionsPublic, UserPublic, UserUpdate
@@ -24,6 +27,7 @@ DEFAULT_ORGANIZATION_SLUG = "complejo-demo"
 TENANT_MISMATCH_DETAIL = "Esta cuenta pertenece a otro complejo"
 ORGANIZATION_NOT_FOUND_DETAIL = "Complejo no encontrado"
 ORGANIZATION_INACTIVE_DETAIL = "Este complejo está desactivado"
+NO_MEMBERSHIP_DETAIL = "Esta cuenta no tiene acceso a ningún complejo"
 
 
 def get_default_organization(db: Session) -> Organization:
@@ -87,16 +91,103 @@ def ensure_user_organization(db: Session, user: User) -> User:
     return user
 
 
-def ensure_user_can_access_organization(db: Session, user: User) -> User:
+def ensure_user_membership(db: Session, user: User) -> User:
     user = ensure_user_organization(db, user)
+    memberships = db.query(OrganizationMembership).filter(OrganizationMembership.user_id == user.id).all()
+    membership = next((item for item in memberships if item.organization_id == user.organization_id), None)
+    if membership:
+        if len(memberships) == 1 and membership.role != user.role:
+            membership.role = user.role
+            membership.is_default = True
+            db.add(membership)
+            db.commit()
+        return user
+
     organization = user.organization or db.get(Organization, user.organization_id)
-    if organization and not organization.is_active and user.role != "admin":
+    if organization is None:
+        raise HTTPException(status_code=403, detail=NO_MEMBERSHIP_DETAIL)
+    ensure_membership(db, user=user, organization=organization, role=user.role, make_default=True)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def list_user_memberships(db: Session, user: User) -> list[OrganizationMembership]:
+    ensure_user_membership(db, user)
+    return (
+        db.query(OrganizationMembership)
+        .options(joinedload(OrganizationMembership.organization))
+        .filter(OrganizationMembership.user_id == user.id)
+        .all()
+    )
+
+
+def apply_active_membership(user: User, membership: OrganizationMembership) -> User:
+    organization = membership.organization
+    if organization is not None:
+        set_committed_value(user, "organization", organization)
+    set_committed_value(user, "organization_id", membership.organization_id)
+    set_committed_value(user, "role", membership.role)
+    setattr(user, "_active_membership", membership)
+    return user
+
+
+def resolve_active_membership(
+    db: Session,
+    user: User,
+    *,
+    organization: Organization | None = None,
+    organization_id: str | None = None,
+    strict: bool = False,
+) -> OrganizationMembership:
+    memberships = list_user_memberships(db, user)
+    if not memberships:
+        raise HTTPException(status_code=403, detail=NO_MEMBERSHIP_DETAIL)
+
+    target_organization_id = str(organization.id) if organization else organization_id
+    membership: OrganizationMembership | None = None
+
+    if target_organization_id:
+        membership = next(
+            (item for item in memberships if str(item.organization_id) == str(target_organization_id)),
+            None,
+        )
+        if not membership and strict:
+            raise HTTPException(status_code=403, detail=TENANT_MISMATCH_DETAIL)
+
+    if membership is None:
+        membership = next((item for item in memberships if item.is_default), None) or memberships[0]
+
+    apply_active_membership(user, membership)
+    return membership
+
+
+def ensure_user_can_access_organization(
+    db: Session,
+    user: User,
+    *,
+    organization: Organization | None = None,
+    organization_id: str | None = None,
+    strict: bool = False,
+) -> User:
+    membership = resolve_active_membership(
+        db,
+        user,
+        organization=organization,
+        organization_id=organization_id,
+        strict=strict,
+    )
+    active_organization = membership.organization or db.get(Organization, membership.organization_id)
+    if active_organization and not active_organization.is_active and membership.role != "admin":
         raise HTTPException(status_code=403, detail=ORGANIZATION_INACTIVE_DETAIL)
     return user
 
 
 def build_user_permissions(user: User) -> UserPermissionsPublic:
-    if user.role == "admin":
+    active_membership = getattr(user, "_active_membership", None)
+    active_role = active_membership.role if active_membership is not None else user.role
+
+    if active_role == "admin":
         return UserPermissionsPublic(
             manage_organization=True,
             manage_staff=True,
@@ -106,7 +197,7 @@ def build_user_permissions(user: User) -> UserPermissionsPublic:
             manage_whatsapp=True,
         )
 
-    if user.role == "staff":
+    if active_role == "staff":
         return UserPermissionsPublic(
             manage_organization=False,
             manage_staff=False,
@@ -126,19 +217,71 @@ def build_user_permissions(user: User) -> UserPermissionsPublic:
     )
 
 
-def serialize_user(user: User) -> UserPublic:
+def serialize_user(user: User, db: Session | None = None) -> UserPublic:
+    active_membership = getattr(user, "_active_membership", None)
+    if db is not None and active_membership is None:
+        user = ensure_user_can_access_organization(db, user)
+        active_membership = getattr(user, "_active_membership", None)
+
+    active_organization = (
+        active_membership.organization
+        if active_membership is not None
+        else user.organization
+    )
+    active_organization_id = (
+        active_membership.organization_id
+        if active_membership is not None
+        else user.organization_id
+    )
+    active_role = active_membership.role if active_membership is not None else user.role
+
     return UserPublic(
         id=str(user.id),
         email=user.email,
         full_name=user.full_name,
-        role=user.role,
-        organization_id=user.organization_id,
-        organization_name=user.organization.name if user.organization else None,
-        organization_slug=user.organization.slug if user.organization else None,
+        role=active_role,
+        organization_id=active_organization_id,
+        organization_name=active_organization.name if active_organization else None,
+        organization_slug=active_organization.slug if active_organization else None,
         whatsapp_number=user.whatsapp_number,
         whatsapp_opt_in=user.whatsapp_opt_in,
         permissions=build_user_permissions(user),
     )
+
+
+def build_auth_payload(db: Session, user: User, organization: Organization | None = None) -> dict[str, str]:
+    active_membership = getattr(user, "_active_membership", None)
+    if organization is not None:
+        user = ensure_user_can_access_organization(db, user, organization=organization, strict=True)
+        active_membership = getattr(user, "_active_membership", None)
+    elif active_membership is None:
+        user = ensure_user_can_access_organization(db, user)
+        active_membership = getattr(user, "_active_membership", None)
+
+    active_organization_id = (
+        str(active_membership.organization_id)
+        if active_membership is not None
+        else (str(user.organization_id) if user.organization_id else None)
+    )
+    active_role = active_membership.role if active_membership is not None else user.role
+
+    return {
+        "access_token": create_access_token(
+            subject=str(user.id),
+            extra={
+                "email": user.email,
+                "role": active_role,
+                "organization_id": active_organization_id,
+            },
+        ),
+        "refresh_token": create_refresh_token(
+            subject=str(user.id),
+            extra={
+                "organization_id": active_organization_id,
+            },
+        ),
+        "token_type": "bearer",
+    }
 
 
 def get_current_user_from_token(token: str, db: Session) -> User:
@@ -151,7 +294,13 @@ def get_current_user_from_token(token: str, db: Session) -> User:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return ensure_user_can_access_organization(db, user)
+    token_organization_id = payload.get("organization_id")
+    return ensure_user_can_access_organization(
+        db,
+        user,
+        organization_id=token_organization_id,
+        strict=bool(token_organization_id),
+    )
 
 
 @router.post("/register", response_model=UserPublic, status_code=201)
@@ -174,9 +323,11 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
         whatsapp_opt_in=whatsapp_opt_in,
     )
     db.add(user)
+    db.flush()
+    ensure_membership(db, user=user, organization=target_organization, role="user", make_default=True)
     db.commit()
     db.refresh(user)
-    return serialize_user(user)
+    return serialize_user(user, db)
 
 
 @router.post("/login", response_model=TokenPair)
@@ -185,23 +336,20 @@ def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = None, 
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
-    user = ensure_user_organization(db, user)
-    requested_organization = get_request_organization_from_request(db, request)
-    if user.organization_id != requested_organization.id:
-        raise HTTPException(status_code=403, detail=TENANT_MISMATCH_DETAIL)
-    if not requested_organization.is_active and user.role != "admin":
-        raise HTTPException(status_code=403, detail=ORGANIZATION_INACTIVE_DETAIL)
-
-    access = create_access_token(
-        subject=str(user.id),
-        extra={
-            "email": user.email,
-            "role": user.role,
-            "organization_id": str(user.organization_id) if user.organization_id else None,
-        },
+    requested_slug = get_requested_organization_slug_from_request(request) if request is not None else None
+    requested_organization = None
+    if requested_slug:
+        requested_organization = get_organization_by_slug(db, requested_slug)
+        if not requested_organization:
+            raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+    user = ensure_user_can_access_organization(
+        db,
+        user,
+        organization=requested_organization,
+        strict=bool(requested_slug),
     )
-    refresh = create_refresh_token(subject=str(user.id))
-    return TokenPair(access_token=access, refresh_token=refresh)
+    tokens = build_auth_payload(db, user)
+    return TokenPair(access_token=tokens["access_token"], refresh_token=tokens["refresh_token"])
 
 
 @router.post("/refresh", response_model=TokenPair)
@@ -218,24 +366,22 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    user = ensure_user_can_access_organization(db, user)
-
-    access = create_access_token(
-        subject=str(user.id),
-        extra={
-            "email": user.email,
-            "role": user.role,
-            "organization_id": str(user.organization_id) if user.organization_id else None,
-        },
+    refresh_organization_id = refresh_payload.get("organization_id")
+    user = ensure_user_can_access_organization(
+        db,
+        user,
+        organization_id=refresh_organization_id,
+        strict=bool(refresh_organization_id),
     )
-    new_refresh = create_refresh_token(subject=str(user.id))
-    return TokenPair(access_token=access, refresh_token=new_refresh)
+
+    tokens = build_auth_payload(db, user)
+    return TokenPair(access_token=tokens["access_token"], refresh_token=tokens["refresh_token"])
 
 
 @router.get("/me", response_model=UserPublic)
 def me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     user = get_current_user_from_token(token, db)
-    return serialize_user(user)
+    return serialize_user(user, db)
 
 
 @router.patch("/me", response_model=UserPublic)
@@ -260,7 +406,7 @@ def update_me(payload: UserUpdate, token: str = Depends(oauth2_scheme), db: Sess
     db.add(user)
     db.commit()
     db.refresh(user)
-    return serialize_user(user)
+    return serialize_user(user, db)
 
 
 @router.patch("/change-password", status_code=204)
