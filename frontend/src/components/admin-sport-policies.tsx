@@ -28,8 +28,8 @@ export function AdminSportPolicies() {
   const [feedback, setFeedback] = useState<{ tone: "error" | "success"; message: string } | null>(null);
 
   const sportsQuery = useQuery({
-    queryKey: ["sports"],
-    queryFn: api.listSports,
+    queryKey: ["organizations", "current", "sports", "policies"],
+    queryFn: api.listCurrentOrganizationSports,
   });
 
   const generalPoliciesQuery = useQuery({
@@ -43,7 +43,7 @@ export function AdminSportPolicies() {
     onSuccess: () => {
       setFeedback({ tone: "success", message: "Política del deporte actualizada correctamente." });
       setEditingSportId(null);
-      void queryClient.invalidateQueries({ queryKey: ["sports"] });
+      void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "sports"] });
       void queryClient.invalidateQueries({ queryKey: ["booking-policies"] });
       void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
       void queryClient.invalidateQueries({ queryKey: ["bookings"] });
@@ -57,7 +57,7 @@ export function AdminSportPolicies() {
   });
 
   function startSportEdit(sportId: string) {
-    const sport = (sportsQuery.data ?? []).find((item) => item.id === sportId);
+    const sport = (sportsQuery.data ?? []).find((item) => item.is_enabled && item.sport.id === sportId)?.sport;
     if (!sport) {
       return;
     }
@@ -135,9 +135,9 @@ export function AdminSportPolicies() {
         <div className="mt-4">
           <LoadingCard label="Cargando deportes..." />
         </div>
-      ) : (sportsQuery.data ?? []).length ? (
+      ) : (sportsQuery.data ?? []).some((item) => item.is_enabled) ? (
         <div className="mt-4 space-y-3">
-          {(sportsQuery.data ?? []).map((sport) => {
+          {(sportsQuery.data ?? []).filter((item) => item.is_enabled).map(({ sport }) => {
             const isEditing = editingSportId === sport.id;
             const bookingText =
               sport.booking_min_lead_minutes !== null

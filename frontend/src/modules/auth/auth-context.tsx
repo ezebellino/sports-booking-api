@@ -6,14 +6,16 @@
   useState,
   type ReactNode,
 } from "react";
-import { api, type User } from "../../lib/api";
+import { api, type User, type UserMembership } from "../../lib/api";
 import { clearTokens, getStoredTokens, storeTokens } from "../../lib/storage";
 
 type AuthContextValue = {
   user: User | null;
+  memberships: UserMembership[];
   isAuthenticated: boolean;
   isAdmin: boolean;
   isStaff: boolean;
+  hasMultipleOrganizations: boolean;
   canAccessAdmin: boolean;
   canManageOrganization: boolean;
   canManageStaff: boolean;
@@ -22,8 +24,8 @@ type AuthContextValue = {
   canManageTimeslots: boolean;
   canManageWhatsapp: boolean;
   loading: boolean;
-  login: (input: { email: string; password: string }) => Promise<void>;
-  register: (input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
+  login: (input: { email: string; password: string }) => Promise<User>;
+  register: (input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<User>;
   onboardOrganization: (input: {
     organization_name: string;
     organization_slug?: string | null;
@@ -32,15 +34,16 @@ type AuthContextValue = {
     admin_password: string;
     whatsapp_number?: string | null;
     whatsapp_opt_in?: boolean;
-  }) => Promise<void>;
+  }) => Promise<User>;
   acceptStaffInvitation: (input: {
     token: string;
     full_name?: string | null;
     password: string;
     whatsapp_number?: string | null;
     whatsapp_opt_in?: boolean;
-  }) => Promise<void>;
-  updateProfile: (input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<void>;
+  }) => Promise<User>;
+  updateProfile: (input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) => Promise<User>;
+  switchOrganization: (organizationId: string) => Promise<User>;
   logout: () => void;
 };
 
@@ -82,11 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const currentUser = await api.me();
     setUser(currentUser);
+    return currentUser;
   }
 
   async function register(input: { email: string; password: string; full_name: string; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) {
     await api.register(input);
-    await login({ email: input.email, password: input.password });
+    return login({ email: input.email, password: input.password });
   }
 
   async function onboardOrganization(input: {
@@ -105,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const currentUser = await api.me();
     setUser(currentUser);
+    return currentUser;
   }
 
   async function acceptStaffInvitation(input: {
@@ -121,11 +126,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const currentUser = await api.me();
     setUser(currentUser);
+    return currentUser;
   }
 
   async function updateProfile(input: { full_name?: string | null; whatsapp_number?: string | null; whatsapp_opt_in?: boolean }) {
     const currentUser = await api.updateMe(input);
     setUser(currentUser);
+    return currentUser;
+  }
+
+  async function switchOrganization(organizationId: string) {
+    const tokens = await api.switchOrganization(organizationId);
+    storeTokens({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+    });
+    const currentUser = await api.me();
+    setUser(currentUser);
+    return currentUser;
   }
 
   function logout() {
@@ -134,14 +152,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const permissions = user?.permissions;
+  const memberships = user?.memberships ?? [];
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        memberships,
         isAuthenticated: Boolean(user),
         isAdmin: user?.role === "admin",
         isStaff: user?.role === "staff",
+        hasMultipleOrganizations: memberships.length > 1,
         canAccessAdmin: Boolean(
           permissions?.manage_organization ||
             permissions?.manage_staff ||
@@ -162,6 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         onboardOrganization,
         acceptStaffInvitation,
         updateProfile,
+        switchOrganization,
         logout,
       }}
     >

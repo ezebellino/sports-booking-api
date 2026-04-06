@@ -6,6 +6,7 @@ from app.core.security import get_password_hash
 from app.models.booking import Booking
 from app.models.court import Court
 from app.models.organization import Organization
+from app.models.organization_membership import OrganizationMembership
 from app.models.organization_settings import OrganizationSettings
 from app.models.sport import Sport
 from app.models.staff_invitation import StaffInvitation
@@ -1860,6 +1861,53 @@ def test_public_onboarding_creates_organization_and_admin_user(client, db_sessio
     assert admin_user.role == "admin"
     assert admin_user.organization_id == organization.id
     assert admin_user.whatsapp_opt_in is True
+    membership = (
+        db_session.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.user_id == admin_user.id,
+            OrganizationMembership.organization_id == organization.id,
+        )
+        .first()
+    )
+    assert membership is not None
+    assert membership.role == "admin"
+    assert membership.is_default is True
+
+
+def test_onboarding_existing_account_adds_admin_membership_without_losing_previous_one(client, db_session):
+    base_token = register_and_login(client, "multi-owner@saas.com", "password123", "Multi Owner")
+    base_me = client.get("/auth/me", headers=auth_headers(base_token))
+    assert base_me.status_code == 200
+    base_org_id = base_me.json()["organization_id"]
+
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Segundo",
+            "organization_slug": "complejo-segundo",
+            "admin_full_name": "Multi Owner",
+            "admin_email": "multi-owner@saas.com",
+            "admin_password": "password123",
+        },
+    )
+
+    assert onboard_response.status_code == 201
+    new_organization_id = onboard_response.json()["organization"]["id"]
+    assert new_organization_id != base_org_id
+
+    user = db_session.query(User).filter(User.email == "multi-owner@saas.com").first()
+    memberships = (
+        db_session.query(OrganizationMembership)
+        .filter(OrganizationMembership.user_id == user.id)
+        .order_by(OrganizationMembership.created_at.asc())
+        .all()
+    )
+    assert len(memberships) == 2
+    assert {str(item.organization_id) for item in memberships} == {str(base_org_id), str(new_organization_id)}
+    assert sum(1 for item in memberships if item.is_default) == 1
+    assert any(str(item.organization_id) == str(base_org_id) and item.is_default for item in memberships)
+    assert any(str(item.organization_id) == str(new_organization_id) and item.role == "admin" for item in memberships)
+    assert str(user.organization_id) == str(base_org_id)
 
 
 def test_admin_can_view_and_update_current_organization(client, db_session):
@@ -2058,6 +2106,16 @@ def test_staff_invitation_flow_creates_user_in_same_organization(client, db_sess
     assert invitation is not None
     assert invitation.status == "accepted"
     assert invitation.accepted_at is not None
+    membership = (
+        db_session.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.user_id == invited_user.id,
+            OrganizationMembership.organization_id == invitation.organization_id,
+        )
+        .first()
+    )
+    assert membership is not None
+    assert membership.role == "admin"
 
     pending_after_accept_response = client.get(
         "/organizations/current/staff-invitations",
@@ -2124,6 +2182,71 @@ def test_accepting_staff_invitation_cleans_other_pending_invites_for_same_email(
         .count()
     )
     assert remaining_pending == 0
+
+
+def test_accepting_staff_invitation_existing_account_adds_membership(client, db_session):
+    owner_a = onboard_organization(
+        client,
+        organization_name="Complejo Invitador",
+        organization_slug="complejo-invitador",
+        admin_email="owner-invitador@saas.com",
+    )
+    owner_b = onboard_organization(
+        client,
+        organization_name="Complejo Receptor",
+        organization_slug="complejo-receptor",
+        admin_email="owner-receptor@saas.com",
+    )
+    invite_token = owner_b["access_token"]
+
+    existing_user_token = register_and_login(client, "staff-existing@saas.com", "password123", "Staff Existing")
+    existing_me = client.get("/auth/me", headers=auth_headers(existing_user_token))
+    assert existing_me.status_code == 200
+    original_org_id = existing_me.json()["organization_id"]
+
+    invitation_response = client.post(
+        "/organizations/current/staff-invitations",
+        json={
+            "email": "staff-existing@saas.com",
+            "full_name": "Staff Existing",
+            "role": "staff",
+            "expires_in_days": 7,
+        },
+        headers=auth_headers(invite_token),
+    )
+    assert invitation_response.status_code == 201
+
+    accept_response = client.post(
+        "/organizations/staff-invitations/accept",
+        json={
+            "token": invitation_response.json()["invite_token"],
+            "full_name": "Staff Existing",
+            "password": "password123",
+        },
+    )
+    assert accept_response.status_code == 200
+    invited_org_id = accept_response.json()["organization"]["id"]
+
+    existing_user = db_session.query(User).filter(User.email == "staff-existing@saas.com").first()
+    memberships = (
+        db_session.query(OrganizationMembership)
+        .filter(OrganizationMembership.user_id == existing_user.id)
+        .all()
+    )
+    assert len(memberships) == 2
+    assert {str(item.organization_id) for item in memberships} == {str(original_org_id), str(invited_org_id)}
+    assert str(existing_user.organization_id) == str(original_org_id)
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "staff-existing@saas.com", "password": "password123"},
+        headers={"X-Organization-Slug": "complejo-receptor"},
+    )
+    assert login_response.status_code == 200
+    me_response = client.get("/auth/me", headers=auth_headers(login_response.json()["access_token"]))
+    assert me_response.status_code == 200
+    assert me_response.json()["organization_slug"] == "complejo-receptor"
+    assert me_response.json()["role"] == "staff"
 
 
 def test_create_staff_invitation_reports_email_sent(client, monkeypatch):
@@ -2298,6 +2421,249 @@ def test_login_rejects_user_from_another_public_organization_slug(client):
 
     assert login_response.status_code == 403
     assert login_response.json()["detail"] == "Esta cuenta pertenece a otro complejo"
+
+
+def test_login_rejects_unknown_public_organization_slug(client):
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": "usuario-unknown@saas.com",
+            "full_name": "Usuario Unknown",
+            "password": "password123",
+        },
+    )
+    assert register_response.status_code == 201
+
+    login_response = client.post(
+        "/auth/login",
+        data={
+            "username": "usuario-unknown@saas.com",
+            "password": "password123",
+        },
+        headers={"X-Organization-Slug": "slug-inexistente"},
+    )
+
+    assert login_response.status_code == 404
+    assert login_response.json()["detail"] == "Complejo no encontrado"
+
+
+def test_login_uses_requested_membership_as_active_context(client, db_session):
+    org_a = Organization(name="Tenant Membership A", slug="tenant-membership-a", is_active=True)
+    org_b = Organization(name="Tenant Membership B", slug="tenant-membership-b", is_active=True)
+    db_session.add_all([org_a, org_b])
+    db_session.flush()
+
+    user = User(
+        email="multi-org@example.com",
+        full_name="Multi Org",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+        organization_id=org_a.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_a.id,
+                role="user",
+                is_default=True,
+            ),
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_b.id,
+                role="admin",
+                is_default=False,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "multi-org@example.com", "password": "password123"},
+        headers={"X-Organization-Slug": "tenant-membership-b"},
+    )
+
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+
+    me_response = client.get("/auth/me", headers=auth_headers(access_token))
+    assert me_response.status_code == 200
+    payload = me_response.json()
+    assert payload["organization_slug"] == "tenant-membership-b"
+    assert payload["role"] == "admin"
+    assert payload["permissions"]["manage_organization"] is True
+
+    admin_response = client.get("/admin/me", headers=auth_headers(access_token))
+    assert admin_response.status_code == 200
+    assert admin_response.json()["organization_slug"] == "tenant-membership-b"
+
+
+def test_login_without_requested_slug_uses_default_membership(client, db_session):
+    org_a = Organization(name="Tenant Default A", slug="tenant-default-a", is_active=True)
+    org_b = Organization(name="Tenant Default B", slug="tenant-default-b", is_active=True)
+    db_session.add_all([org_a, org_b])
+    db_session.flush()
+
+    user = User(
+        email="default-membership@example.com",
+        full_name="Default Membership",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+        organization_id=org_a.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_a.id,
+                role="staff",
+                is_default=True,
+            ),
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_b.id,
+                role="admin",
+                is_default=False,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "default-membership@example.com", "password": "password123"},
+    )
+
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+    me_response = client.get("/auth/me", headers=auth_headers(access_token))
+    assert me_response.status_code == 200
+    payload = me_response.json()
+    assert payload["organization_slug"] == "tenant-default-a"
+    assert payload["role"] == "staff"
+    assert payload["permissions"]["manage_organization"] is False
+    assert len(payload["memberships"]) == 2
+    assert any(item["organization_slug"] == "tenant-default-a" and item["is_active"] for item in payload["memberships"])
+    assert any(item["organization_slug"] == "tenant-default-b" and not item["is_active"] for item in payload["memberships"])
+
+
+def test_access_token_rejects_removed_membership_context(client, db_session):
+    org_a = Organization(name="Tenant Token A", slug="tenant-token-a", is_active=True)
+    org_b = Organization(name="Tenant Token B", slug="tenant-token-b", is_active=True)
+    db_session.add_all([org_a, org_b])
+    db_session.flush()
+
+    user = User(
+        email="removed-membership@example.com",
+        full_name="Removed Membership",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+        organization_id=org_a.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    removable_membership = OrganizationMembership(
+        user_id=user.id,
+        organization_id=org_b.id,
+        role="admin",
+        is_default=False,
+    )
+    db_session.add_all(
+        [
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_a.id,
+                role="user",
+                is_default=True,
+            ),
+            removable_membership,
+        ]
+    )
+    db_session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "removed-membership@example.com", "password": "password123"},
+        headers={"X-Organization-Slug": "tenant-token-b"},
+    )
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+    refresh_token = login_response.json()["refresh_token"]
+
+    db_session.delete(removable_membership)
+    db_session.commit()
+
+    me_response = client.get("/auth/me", headers=auth_headers(access_token))
+    assert me_response.status_code == 403
+    assert me_response.json()["detail"] == "Esta cuenta pertenece a otro complejo"
+
+    refresh_response = client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    assert refresh_response.status_code == 403
+    assert refresh_response.json()["detail"] == "Esta cuenta pertenece a otro complejo"
+
+
+def test_switch_organization_changes_active_membership_context(client, db_session):
+    org_a = Organization(name="Tenant Switch A", slug="tenant-switch-a", is_active=True)
+    org_b = Organization(name="Tenant Switch B", slug="tenant-switch-b", is_active=True)
+    db_session.add_all([org_a, org_b])
+    db_session.flush()
+
+    user = User(
+        email="switch-membership@example.com",
+        full_name="Switch Membership",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+        organization_id=org_a.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_a.id,
+                role="user",
+                is_default=True,
+            ),
+            OrganizationMembership(
+                user_id=user.id,
+                organization_id=org_b.id,
+                role="admin",
+                is_default=False,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "switch-membership@example.com", "password": "password123"},
+    )
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+
+    switch_response = client.post(
+        "/auth/switch-organization",
+        json={"organization_id": str(org_b.id)},
+        headers=auth_headers(access_token),
+    )
+    assert switch_response.status_code == 200
+
+    me_response = client.get("/auth/me", headers=auth_headers(switch_response.json()["access_token"]))
+    assert me_response.status_code == 200
+    payload = me_response.json()
+    assert payload["organization_slug"] == "tenant-switch-b"
+    assert payload["role"] == "admin"
+    assert any(item["organization_slug"] == "tenant-switch-b" and item["is_active"] for item in payload["memberships"])
 
 
 def test_inactive_organization_blocks_public_context_and_registration(client):
@@ -2589,6 +2955,7 @@ def test_admin_can_create_global_sport_and_enable_it_for_current_organization(cl
 def test_admin_can_upload_organization_logo(client, monkeypatch, tmp_path):
     from app.core.config import settings
 
+    monkeypatch.setattr(settings, "MEDIA_STORAGE_BACKEND", "local")
     monkeypatch.setattr(settings, "MEDIA_ROOT", str(tmp_path / "uploads"))
 
     onboard_response = client.post(
@@ -2620,6 +2987,63 @@ def test_admin_can_upload_organization_logo(client, monkeypatch, tmp_path):
     assert payload["logo_url"].startswith(f"/media/organization-logos/{organization_id}/")
     relative_path = payload["logo_url"].removeprefix("/media/")
     assert (tmp_path / "uploads" / relative_path).exists()
+
+
+def test_admin_can_upload_organization_logo_to_external_storage(client, monkeypatch):
+    from app.core.config import settings
+
+    uploaded_objects = []
+    deleted_objects = []
+
+    class FakeS3Client:
+        def put_object(self, **kwargs):
+            uploaded_objects.append(kwargs)
+
+        def delete_object(self, **kwargs):
+            deleted_objects.append(kwargs)
+
+    monkeypatch.setattr(settings, "MEDIA_STORAGE_BACKEND", "s3")
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "sports-booking-assets")
+    monkeypatch.setattr(settings, "S3_PUBLIC_BASE_URL", "https://cdn.example.com")
+    monkeypatch.setattr(settings, "S3_ENDPOINT_URL", "https://example.r2.cloudflarestorage.com")
+    monkeypatch.setattr(settings, "S3_REGION", "auto")
+    monkeypatch.setattr(settings, "S3_ACCESS_KEY_ID", "key")
+    monkeypatch.setattr(settings, "S3_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setattr(settings, "S3_KEY_PREFIX", "production")
+    monkeypatch.setattr("app.core.logo_storage.get_s3_client", lambda: FakeS3Client())
+
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Logo Externo",
+            "admin_full_name": "Logo Admin",
+            "admin_email": "logo-externo@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+    organization_id = onboard_response.json()["organization"]["id"]
+
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc`\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    response = client.post(
+        "/organizations/current/logo",
+        headers=auth_headers(admin_token),
+        files={"file": ("logo.png", png_bytes, "image/png")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["logo_url"].startswith("https://cdn.example.com/production/organization-logos/")
+    assert f"/{organization_id}/" in payload["logo_url"]
+    assert len(uploaded_objects) == 1
+    assert uploaded_objects[0]["Bucket"] == "sports-booking-assets"
+    assert uploaded_objects[0]["ContentType"] == "image/png"
+    assert deleted_objects == []
 
 
 def test_admin_readiness_reflects_operational_setup(client, db_session):

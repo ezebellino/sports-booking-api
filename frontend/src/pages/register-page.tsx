@@ -5,7 +5,7 @@ import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/app-header";
 import { api } from "../lib/api";
 import { getBrandColor } from "../lib/branding";
-import { useTenantPath, useTenantSlug } from "../lib/tenant";
+import { buildTenantPath, useTenantPath, useTenantSlug } from "../lib/tenant";
 import {
   normalizeEmail,
   normalizePhone,
@@ -86,14 +86,14 @@ export function RegisterPage() {
     setLoading(true);
 
     try {
-      await register({
+      const currentUser = await register({
         full_name: fullName.trim(),
         email: normalizeEmail(email),
         password: password.trim(),
         whatsapp_number: normalizePhone(whatsappNumber) || null,
         whatsapp_opt_in: whatsappOptIn,
       });
-      navigate(tenantPath("/explore"));
+      navigate(buildTenantPath("/explore", currentUser.organization_slug), { replace: true });
     } catch (submissionError) {
       setSubmitError(submissionError instanceof Error ? submissionError.message : "No pudimos crear la cuenta.");
     } finally {

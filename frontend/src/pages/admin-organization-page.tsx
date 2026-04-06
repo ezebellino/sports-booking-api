@@ -213,9 +213,9 @@ export function AdminOrganizationPage() {
       void organizationSportsQuery.refetch();
       void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-audit-events"] });
-      void queryClient.invalidateQueries({ queryKey: ["sports"] });
-      void queryClient.invalidateQueries({ queryKey: ["venues"] });
-      void queryClient.invalidateQueries({ queryKey: ["courts"] });
+      void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "sports"] });
+      void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "venues"] });
+      void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "courts"] });
       void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
     onError: (mutationError) => {
@@ -237,9 +237,9 @@ export function AdminOrganizationPage() {
       void queryClient.invalidateQueries({ queryKey: ["admin-readiness"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-audit-events"] });
       void queryClient.invalidateQueries({ queryKey: ["current-organization-sports"] });
-      void queryClient.invalidateQueries({ queryKey: ["sports"] });
-      void queryClient.invalidateQueries({ queryKey: ["venues"] });
-      void queryClient.invalidateQueries({ queryKey: ["courts"] });
+      void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "sports"] });
+      void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "venues"] });
+      void queryClient.invalidateQueries({ queryKey: ["organizations", "current", "courts"] });
       void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
     onError: (mutationError) => {

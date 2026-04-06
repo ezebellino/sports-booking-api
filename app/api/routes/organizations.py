@@ -8,23 +8,29 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import (
     get_request_organization,
+    require_manage_inventory,
     require_manage_organization,
     require_manage_staff,
     require_manage_whatsapp,
 )
-from app.api.routes.auth import ensure_user_organization
+from app.api.routes.auth import build_auth_payload, ensure_user_organization
 from app.core.admin_audit import record_admin_audit_event
 from app.core.email import build_staff_invitation_link, send_staff_invitation_email
 from app.core.logo_storage import delete_managed_logo, save_uploaded_logo
+from app.core.organization_memberships import ensure_membership
 from app.core.organization_settings import get_or_create_organization_settings
-from app.core.security import create_access_token, create_refresh_token, get_password_hash
+from app.core.security import get_password_hash, verify_password
 from app.core.whatsapp import normalize_whatsapp_number
 from app.db.session import get_db
 from app.models.organization import Organization
+from app.models.organization_membership import OrganizationMembership
 from app.models.organization_sport import OrganizationSport
 from app.models.sport import Sport
 from app.models.staff_invitation import StaffInvitation
 from app.models.user import User
+from app.models.venue import Venue
+from app.models.court import Court
+from app.schemas.court import CourtPublic
 from app.schemas.organization import (
     OrganizationOnboardingCreate,
     OrganizationOnboardingPublic,
@@ -41,6 +47,7 @@ from app.schemas.organization import (
     StaffInvitationPublic,
 )
 from app.schemas.sport import OrganizationSportPublic, SportPublic
+from app.schemas.venue import VenuePublic
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
@@ -48,6 +55,8 @@ ORGANIZATION_NOT_FOUND_DETAIL = "Organización no encontrada"
 ORGANIZATION_NAME_EXISTS_DETAIL = "Ya existe un complejo con ese nombre"
 ORGANIZATION_SLUG_EXISTS_DETAIL = "Ya existe un complejo con ese identificador"
 EMAIL_EXISTS_DETAIL = "Email ya registrado"
+INVALID_EXISTING_ACCOUNT_PASSWORD_DETAIL = "La contraseña no coincide con la cuenta existente"
+USER_ALREADY_MEMBER_DETAIL = "Esta cuenta ya pertenece a este complejo"
 INVITATION_NOT_FOUND_DETAIL = "Invitación no encontrada o vencida"
 INVITATION_ALREADY_USED_DETAIL = "La invitación ya fue utilizada"
 INVITATION_CANNOT_BE_CANCELLED_DETAIL = "Solo se pueden cancelar invitaciones pendientes"
@@ -69,21 +78,6 @@ def unique_organization_slug(db: Session, requested_slug: str) -> str:
         suffix += 1
 
     return slug
-
-
-def build_auth_payload(user: User) -> dict[str, str]:
-    return {
-        "access_token": create_access_token(
-            subject=str(user.id),
-            extra={
-                "email": user.email,
-                "role": user.role,
-                "organization_id": str(user.organization_id),
-            },
-        ),
-        "refresh_token": create_refresh_token(subject=str(user.id)),
-        "token_type": "bearer",
-    }
 
 
 def serialize_settings(settings) -> OrganizationSettingsPublic:
@@ -143,8 +137,9 @@ def get_request_context(
 
 @router.post("/onboard", response_model=OrganizationOnboardingPublic, status_code=201)
 def onboard_organization(payload: OrganizationOnboardingCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == payload.admin_email).first():
-        raise HTTPException(status_code=409, detail=EMAIL_EXISTS_DETAIL)
+    existing_admin_user = db.query(User).filter(User.email == payload.admin_email).first()
+    if existing_admin_user and not verify_password(payload.admin_password, existing_admin_user.hashed_password):
+        raise HTTPException(status_code=409, detail=INVALID_EXISTING_ACCOUNT_PASSWORD_DETAIL)
 
     if db.query(Organization).filter(Organization.name.ilike(payload.organization_name)).first():
         raise HTTPException(status_code=409, detail=ORGANIZATION_NAME_EXISTS_DETAIL)
@@ -172,21 +167,38 @@ def onboard_organization(payload: OrganizationOnboardingCreate, db: Session = De
     whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
     whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
 
-    admin_user = User(
-        email=payload.admin_email,
-        full_name=payload.admin_full_name,
-        hashed_password=get_password_hash(payload.admin_password),
+    if existing_admin_user:
+        admin_user = existing_admin_user
+        if payload.admin_full_name and not admin_user.full_name:
+            admin_user.full_name = payload.admin_full_name
+        if whatsapp_number:
+            admin_user.whatsapp_number = whatsapp_number
+            admin_user.whatsapp_opt_in = whatsapp_opt_in
+    else:
+        admin_user = User(
+            email=payload.admin_email,
+            full_name=payload.admin_full_name,
+            hashed_password=get_password_hash(payload.admin_password),
+            role="admin",
+            organization_id=organization.id,
+            whatsapp_number=whatsapp_number,
+            whatsapp_opt_in=whatsapp_opt_in,
+        )
+        db.add(admin_user)
+        db.flush()
+
+    ensure_membership(
+        db,
+        user=admin_user,
+        organization=organization,
         role="admin",
-        organization_id=organization.id,
-        whatsapp_number=whatsapp_number,
-        whatsapp_opt_in=whatsapp_opt_in,
+        make_default=not existing_admin_user,
     )
-    db.add(admin_user)
     db.commit()
     db.refresh(organization)
     db.refresh(admin_user)
 
-    tokens = build_auth_payload(admin_user)
+    tokens = build_auth_payload(db, admin_user, organization=organization)
     return OrganizationOnboardingPublic(
         organization=organization,
         user_id=admin_user.id,
@@ -269,7 +281,7 @@ def get_current_organization_settings(
 @router.get("/current/sports", response_model=list[OrganizationSportPublic])
 def list_current_organization_sports(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_manage_organization),
+    current_admin: User = Depends(require_manage_inventory),
 ):
     current_admin = ensure_user_organization(db, current_admin)
     organization = db.get(Organization, current_admin.organization_id)
@@ -315,6 +327,42 @@ def update_current_organization_sports(
         db.refresh(row)
 
     return [OrganizationSportPublic(sport=SportPublic.model_validate(row.sport), is_enabled=row.is_enabled) for row in rows]
+
+
+@router.get("/current/venues", response_model=list[VenuePublic])
+def list_current_organization_venues(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_manage_inventory),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+
+    return (
+        db.query(Venue)
+        .filter(Venue.organization_id == organization.id)
+        .order_by(Venue.name.asc())
+        .all()
+    )
+
+
+@router.get("/current/courts", response_model=list[CourtPublic])
+def list_current_organization_courts(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_manage_inventory),
+):
+    current_admin = ensure_user_organization(db, current_admin)
+    organization = db.get(Organization, current_admin.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
+
+    return (
+        db.query(Court)
+        .filter(Court.organization_id == organization.id)
+        .order_by(Court.name.asc())
+        .all()
+    )
 
 
 @router.patch("/current/settings", response_model=OrganizationSettingsPublic)
@@ -415,8 +463,18 @@ def create_staff_invitation(
     current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    if db.query(User).filter(User.email == payload.email).first():
-        raise HTTPException(status_code=409, detail=EMAIL_EXISTS_DETAIL)
+    existing_user = db.query(User).filter(User.email == payload.email).first()
+    if existing_user:
+        existing_membership = (
+            db.query(OrganizationMembership)
+            .filter(
+                OrganizationMembership.user_id == existing_user.id,
+                OrganizationMembership.organization_id == current_admin.organization_id,
+            )
+            .first()
+        )
+        if existing_membership:
+            raise HTTPException(status_code=409, detail=USER_ALREADY_MEMBER_DETAIL)
 
     invitation = StaffInvitation(
         organization_id=current_admin.organization_id,
@@ -516,26 +574,53 @@ def accept_staff_invitation(payload: StaffInvitationAccept, db: Session = Depend
         raise HTTPException(status_code=404, detail=INVITATION_NOT_FOUND_DETAIL)
     if invitation.status != "pending":
         raise HTTPException(status_code=409, detail=INVITATION_ALREADY_USED_DETAIL)
-    if db.query(User).filter(User.email == invitation.email).first():
-        raise HTTPException(status_code=409, detail=EMAIL_EXISTS_DETAIL)
 
     whatsapp_number = normalize_whatsapp_number(payload.whatsapp_number)
     whatsapp_opt_in = bool(payload.whatsapp_opt_in and whatsapp_number)
+    existing_user = db.query(User).filter(User.email == invitation.email).first()
+    if existing_user and not verify_password(payload.password, existing_user.hashed_password):
+        raise HTTPException(status_code=409, detail=INVALID_EXISTING_ACCOUNT_PASSWORD_DETAIL)
 
-    user = User(
-        email=invitation.email,
-        full_name=(payload.full_name or invitation.full_name or "").strip() or None,
-        hashed_password=get_password_hash(payload.password),
-        role=invitation.role,
-        organization_id=invitation.organization_id,
-        whatsapp_number=whatsapp_number,
-        whatsapp_opt_in=whatsapp_opt_in,
-    )
-    db.add(user)
+    user = existing_user
+    if user is None:
+        user = User(
+            email=invitation.email,
+            full_name=(payload.full_name or invitation.full_name or "").strip() or None,
+            hashed_password=get_password_hash(payload.password),
+            role=invitation.role,
+            organization_id=invitation.organization_id,
+            whatsapp_number=whatsapp_number,
+            whatsapp_opt_in=whatsapp_opt_in,
+        )
+        db.add(user)
+        db.flush()
+    else:
+        existing_membership = (
+            db.query(OrganizationMembership)
+            .filter(
+                OrganizationMembership.user_id == user.id,
+                OrganizationMembership.organization_id == invitation.organization_id,
+            )
+            .first()
+        )
+        if existing_membership:
+            raise HTTPException(status_code=409, detail=USER_ALREADY_MEMBER_DETAIL)
+        if payload.full_name and not user.full_name:
+            user.full_name = payload.full_name.strip() or None
+        if whatsapp_number:
+            user.whatsapp_number = whatsapp_number
+            user.whatsapp_opt_in = whatsapp_opt_in
 
     invitation.status = "accepted"
     invitation.accepted_at = datetime.now(timezone.utc)
     db.add(invitation)
+    ensure_membership(
+        db,
+        user=user,
+        organization=invitation.organization,
+        role=invitation.role,
+        make_default=existing_user is None,
+    )
     (
         db.query(StaffInvitation)
         .filter(
@@ -550,7 +635,7 @@ def accept_staff_invitation(payload: StaffInvitationAccept, db: Session = Depend
     db.refresh(user)
     db.refresh(invitation)
 
-    tokens = build_auth_payload(user)
+    tokens = build_auth_payload(db, user, organization=invitation.organization)
     return StaffInvitationAcceptancePublic(
         organization=invitation.organization,
         user_id=user.id,

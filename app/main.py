@@ -6,7 +6,7 @@ from app.api.routes import sports, venues, courts, timeslots, bookings
 from app.api.routes import organizations
 from app.api.routes import admin
 from app.core.config import settings
-from app.core.logo_storage import media_root_path
+from app.core.logo_storage import is_local_media_storage, media_root_path
 
 app = FastAPI(title="Sports Booking API", version="0.2.0")
 
@@ -29,4 +29,6 @@ app.include_router(courts.router)
 app.include_router(timeslots.router)
 app.include_router(bookings.router)
 app.include_router(admin.router)
-app.mount(settings.MEDIA_URL_PREFIX, StaticFiles(directory=media_root_path()), name="media")
+
+if is_local_media_storage():
+    app.mount(settings.MEDIA_URL_PREFIX, StaticFiles(directory=media_root_path()), name="media")
