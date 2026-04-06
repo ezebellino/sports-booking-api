@@ -2955,6 +2955,7 @@ def test_admin_can_create_global_sport_and_enable_it_for_current_organization(cl
 def test_admin_can_upload_organization_logo(client, monkeypatch, tmp_path):
     from app.core.config import settings
 
+    monkeypatch.setattr(settings, "MEDIA_STORAGE_BACKEND", "local")
     monkeypatch.setattr(settings, "MEDIA_ROOT", str(tmp_path / "uploads"))
 
     onboard_response = client.post(
@@ -2986,6 +2987,63 @@ def test_admin_can_upload_organization_logo(client, monkeypatch, tmp_path):
     assert payload["logo_url"].startswith(f"/media/organization-logos/{organization_id}/")
     relative_path = payload["logo_url"].removeprefix("/media/")
     assert (tmp_path / "uploads" / relative_path).exists()
+
+
+def test_admin_can_upload_organization_logo_to_external_storage(client, monkeypatch):
+    from app.core.config import settings
+
+    uploaded_objects = []
+    deleted_objects = []
+
+    class FakeS3Client:
+        def put_object(self, **kwargs):
+            uploaded_objects.append(kwargs)
+
+        def delete_object(self, **kwargs):
+            deleted_objects.append(kwargs)
+
+    monkeypatch.setattr(settings, "MEDIA_STORAGE_BACKEND", "s3")
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "sports-booking-assets")
+    monkeypatch.setattr(settings, "S3_PUBLIC_BASE_URL", "https://cdn.example.com")
+    monkeypatch.setattr(settings, "S3_ENDPOINT_URL", "https://example.r2.cloudflarestorage.com")
+    monkeypatch.setattr(settings, "S3_REGION", "auto")
+    monkeypatch.setattr(settings, "S3_ACCESS_KEY_ID", "key")
+    monkeypatch.setattr(settings, "S3_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setattr(settings, "S3_KEY_PREFIX", "production")
+    monkeypatch.setattr("app.core.logo_storage.get_s3_client", lambda: FakeS3Client())
+
+    onboard_response = client.post(
+        "/organizations/onboard",
+        json={
+            "organization_name": "Complejo Logo Externo",
+            "admin_full_name": "Logo Admin",
+            "admin_email": "logo-externo@saas.com",
+            "admin_password": "password123",
+        },
+    )
+    assert onboard_response.status_code == 201
+    admin_token = onboard_response.json()["access_token"]
+    organization_id = onboard_response.json()["organization"]["id"]
+
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc`\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    response = client.post(
+        "/organizations/current/logo",
+        headers=auth_headers(admin_token),
+        files={"file": ("logo.png", png_bytes, "image/png")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["logo_url"].startswith("https://cdn.example.com/production/organization-logos/")
+    assert f"/{organization_id}/" in payload["logo_url"]
+    assert len(uploaded_objects) == 1
+    assert uploaded_objects[0]["Bucket"] == "sports-booking-assets"
+    assert uploaded_objects[0]["ContentType"] == "image/png"
+    assert deleted_objects == []
 
 
 def test_admin_readiness_reflects_operational_setup(client, db_session):

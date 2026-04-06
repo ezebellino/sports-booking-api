@@ -177,7 +177,7 @@ Auditoría básica de acciones admin.
 ## Phase S7: Multi-Organization Memberships
 Objetivo: permitir que una misma cuenta pertenezca a múltiples complejos y pueda elegir con cuál operar.
 
-Estado: `in_progress`
+Estado: `closed`
 
 ### Problema actual
 - `users.organization_id` fuerza un único complejo por cuenta.
@@ -197,7 +197,19 @@ Estado: `in_progress`
 - `S7.3` onboarding e invitaciones suman memberships
   estado: `closed`
 - `S7.4` selector y switcher de complejo en frontend
+  estado: `closed`
 - `S7.5` cleanup del modelo legado
+  estado: `deferred`
+
+### Cierre
+- una misma cuenta ya puede pertenecer a múltiples complejos
+- onboarding e invitaciones agregan memberships en vez de reemplazar pertenencia
+- login, sesión y switcher respetan el complejo activo
+- las pantallas admin ya consumen el tenant activo autenticado
+
+### Deuda técnica controlada
+- `users.organization_id` y `users.role` siguen existiendo como compatibilidad temporal
+- el cleanup total del modelo legado se mueve al bloque de hardening de producción para no romper el flujo ya validado
 
 ### Referencia
 - [ORG_MEMBERSHIPS_MIGRATION_PLAN.md](c:/ProjectsZeqe/sports-booking/ORG_MEMBERSHIPS_MIGRATION_PLAN.md)
@@ -210,7 +222,7 @@ Estado: `in_progress`
 ## Recommended Order
 1. S4 Real Branding
 2. S5 Staff Permissions
-3. S7 Multi-Organization Memberships
+3. Hardening de producción
 
 ## About Existing Plans
 

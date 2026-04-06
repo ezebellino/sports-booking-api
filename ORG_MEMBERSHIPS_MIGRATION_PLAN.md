@@ -80,6 +80,19 @@ Durante la migración:
    - remover dependencia funcional de `users.organization_id`
    - evaluar eliminar esa columna
 
+## Current Project Status
+
+### Ya implementado
+- `organization_memberships` creada con migración y backfill.
+- auth y permisos ya leen membership activa.
+- onboarding e invitaciones agregan memberships.
+- `auth/me` devuelve memberships disponibles.
+- existe switcher de complejo activo en frontend.
+- la operación admin usa el tenant activo autenticado.
+
+### Pendiente menor
+- remover la compatibilidad temporal con `users.organization_id` y `users.role` cuando el hardening de producción esté cerrado.
+
 ## Required Backend Changes
 - modelo nuevo en `app/models`
 - migración Alembic con backfill
