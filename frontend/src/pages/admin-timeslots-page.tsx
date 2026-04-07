@@ -182,6 +182,7 @@ export function AdminTimeslotsPage() {
       api.listTimeslots({
         dateFrom: dayBounds.startIso,
         dateTo: dayBounds.endIso,
+        auth: true,
       }),
   });
 
@@ -191,6 +192,7 @@ export function AdminTimeslotsPage() {
       api.listTimeslots({
         dateFrom: scheduleMode === "monthly" ? monthBounds.startIso : dayBounds.startIso,
         dateTo: scheduleMode === "monthly" ? monthBounds.endIso : dayBounds.endIso,
+        auth: true,
       }),
   });
 

@@ -699,7 +699,7 @@ export const api = {
       auth: true,
     }),
 
-  listTimeslots: (params: { courtId?: string | null; dateFrom?: string; dateTo?: string }) => {
+  listTimeslots: (params: { courtId?: string | null; dateFrom?: string; dateTo?: string; auth?: boolean }) => {
     const searchParams = new URLSearchParams();
     searchParams.set("limit", "100");
     if (params.courtId) {
@@ -711,7 +711,7 @@ export const api = {
     if (params.dateTo) {
       searchParams.set("date_to", params.dateTo);
     }
-    return request<TimeSlot[]>(`/timeslots?${searchParams.toString()}`);
+    return request<TimeSlot[]>(`/timeslots?${searchParams.toString()}`, { auth: params.auth });
   },
 
   createTimeslot: (input: {
