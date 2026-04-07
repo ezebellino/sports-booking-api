@@ -481,6 +481,7 @@ def bulk_create_timeslots(
             exists = (
                 db.query(TimeSlot)
                 .filter(
+                    TimeSlot.organization_id == active_organization_id,
                     TimeSlot.court_id == court.id,
                     TimeSlot.starts_at == current_start,
                     TimeSlot.ends_at == current_end,

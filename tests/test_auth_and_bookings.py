@@ -2854,6 +2854,91 @@ def test_switched_admin_bulk_create_timeslots_in_active_organization(client, db_
     assert len(current_timeslots_response.json()) == 2
 
 
+def test_bulk_create_ignores_conflicts_from_other_organization_rows(client, db_session):
+    sport = Sport(name="Padel bulk mismatch", description="Mismatch org")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    owner_a = onboard_organization(
+        client,
+        organization_name="Complejo Mismatch A",
+        organization_slug="complejo-mismatch-a",
+        admin_email="owner-mismatch-a@saas.com",
+    )
+    owner_b = onboard_organization(
+        client,
+        organization_name="Complejo Mismatch B",
+        organization_slug="complejo-mismatch-b",
+        admin_email="owner-mismatch-b@saas.com",
+    )
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Mismatch B",
+            "address": "Calle Mismatch 456",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(owner_b["access_token"]),
+    )
+    assert venue_response.status_code == 201
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": venue_response.json()["id"],
+            "sport_id": str(sport.id),
+            "name": "Cancha Mismatch B",
+            "indoor": True,
+            "is_active": True,
+        },
+        headers=auth_headers(owner_b["access_token"]),
+    )
+    assert court_response.status_code == 201
+
+    base_day = datetime.now(timezone.utc).replace(hour=18, minute=0, second=0, microsecond=0) + timedelta(days=4)
+    malformed_timeslot = TimeSlot(
+        organization_id=owner_a["organization"]["id"],
+        court_id=court_response.json()["id"],
+        starts_at=base_day,
+        ends_at=base_day + timedelta(hours=1),
+        capacity=4,
+        price=18000,
+        is_active=True,
+    )
+    db_session.add(malformed_timeslot)
+    db_session.commit()
+
+    bulk_response = client.post(
+        "/admin/timeslots/bulk",
+        json={
+            "court_ids": [court_response.json()["id"]],
+            "window_starts_at": base_day.isoformat(),
+            "window_ends_at": (base_day + timedelta(hours=1)).isoformat(),
+            "slot_minutes": 60,
+            "capacity": 4,
+            "price": 18000,
+            "is_active": True,
+        },
+        headers=auth_headers(owner_b["access_token"]),
+    )
+    assert bulk_response.status_code == 201
+    assert bulk_response.json()["created_count"] == 1
+    assert bulk_response.json()["skipped_count"] == 0
+
+    tenant_b_timeslots = (
+        db_session.query(TimeSlot)
+        .filter(
+            TimeSlot.organization_id == owner_b["organization"]["id"],
+            TimeSlot.court_id == court_response.json()["id"],
+        )
+        .all()
+    )
+    assert len(tenant_b_timeslots) == 1
+
+
 def test_inactive_organization_blocks_public_context_and_registration(client):
     onboard_response = client.post(
         "/organizations/onboard",
