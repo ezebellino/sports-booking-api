@@ -144,7 +144,7 @@ def list_timeslots(
         .outerjoin(confirmed_bookings_subquery, confirmed_bookings_subquery.c.timeslot_id == TimeSlot.id)
         .options(joinedload(TimeSlot.organization).joinedload(Organization.settings))
         .options(joinedload(TimeSlot.court).joinedload(Court.sport))
-        .filter(TimeSlot.organization_id == organization.id)
+        .filter(Court.organization_id == organization.id)
     )
 
     if court_id:
@@ -170,7 +170,8 @@ def update_timeslot(
         select(TimeSlot)
         .options(joinedload(TimeSlot.organization).joinedload(Organization.settings))
         .options(joinedload(TimeSlot.court).joinedload(Court.sport))
-        .where(TimeSlot.id == timeslot_id, TimeSlot.organization_id == active_organization_id)
+        .join(Court, Court.id == TimeSlot.court_id)
+        .where(TimeSlot.id == timeslot_id, Court.organization_id == active_organization_id)
     ).scalar_one_or_none()
     if not timeslot:
         raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
@@ -209,7 +210,12 @@ def delete_timeslot(
     current_admin: User = Depends(require_manage_timeslots),
 ):
     active_organization_id = get_active_organization_id(current_admin)
-    timeslot = db.query(TimeSlot).filter(TimeSlot.id == timeslot_id, TimeSlot.organization_id == active_organization_id).first()
+    timeslot = (
+        db.query(TimeSlot)
+        .join(Court, Court.id == TimeSlot.court_id)
+        .filter(TimeSlot.id == timeslot_id, Court.organization_id == active_organization_id)
+        .first()
+    )
     if not timeslot:
         raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
 

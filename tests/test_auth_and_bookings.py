@@ -2854,7 +2854,7 @@ def test_switched_admin_bulk_create_timeslots_in_active_organization(client, db_
     assert len(current_timeslots_response.json()) == 2
 
 
-def test_bulk_create_ignores_conflicts_from_other_organization_rows(client, db_session):
+def test_timeslot_list_surfaces_rows_owned_by_current_court_organization(client, db_session):
     sport = Sport(name="Padel bulk mismatch", description="Mismatch org")
     db_session.add(sport)
     db_session.commit()
@@ -2911,6 +2911,20 @@ def test_bulk_create_ignores_conflicts_from_other_organization_rows(client, db_s
     db_session.add(malformed_timeslot)
     db_session.commit()
 
+    list_response = client.get(
+        "/timeslots",
+        params={
+            "court_id": court_response.json()["id"],
+            "date_from": base_day.isoformat(),
+            "date_to": (base_day + timedelta(days=1)).isoformat(),
+        },
+        headers=auth_headers(owner_b["access_token"]),
+    )
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert len(payload) == 1
+    assert payload[0]["court_id"] == court_response.json()["id"]
+
     bulk_response = client.post(
         "/admin/timeslots/bulk",
         json={
@@ -2925,18 +2939,8 @@ def test_bulk_create_ignores_conflicts_from_other_organization_rows(client, db_s
         headers=auth_headers(owner_b["access_token"]),
     )
     assert bulk_response.status_code == 201
-    assert bulk_response.json()["created_count"] == 1
-    assert bulk_response.json()["skipped_count"] == 0
-
-    tenant_b_timeslots = (
-        db_session.query(TimeSlot)
-        .filter(
-            TimeSlot.organization_id == owner_b["organization"]["id"],
-            TimeSlot.court_id == court_response.json()["id"],
-        )
-        .all()
-    )
-    assert len(tenant_b_timeslots) == 1
+    assert bulk_response.json()["created_count"] == 0
+    assert bulk_response.json()["skipped_count"] == 1
 
 
 def test_inactive_organization_blocks_public_context_and_registration(client):

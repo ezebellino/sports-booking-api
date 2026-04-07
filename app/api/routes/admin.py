@@ -481,7 +481,6 @@ def bulk_create_timeslots(
             exists = (
                 db.query(TimeSlot)
                 .filter(
-                    TimeSlot.organization_id == active_organization_id,
                     TimeSlot.court_id == court.id,
                     TimeSlot.starts_at == current_start,
                     TimeSlot.ends_at == current_end,
@@ -490,9 +489,15 @@ def bulk_create_timeslots(
             )
 
             if exists:
-                skipped_reasons.append(
-                    f"{court.name}: ya existe un turno entre {current_start.isoformat()} y {current_end.isoformat()}"
-                )
+                if exists.organization_id != active_organization_id:
+                    skipped_reasons.append(
+                        f"{court.name}: ya existe un turno entre {current_start.isoformat()} y {current_end.isoformat()} "
+                        "pero quedó asociado a otra organización; revisá la integridad del tenant."
+                    )
+                else:
+                    skipped_reasons.append(
+                        f"{court.name}: ya existe un turno entre {current_start.isoformat()} y {current_end.isoformat()}"
+                    )
             else:
                 timeslot = TimeSlot(
                     organization_id=active_organization_id,
