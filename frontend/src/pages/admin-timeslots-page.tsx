@@ -134,6 +134,7 @@ export function AdminTimeslotsPage() {
   const [isActive, setIsActive] = useState(true);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
+  const [bulkSkippedReasons, setBulkSkippedReasons] = useState<string[]>([]);
   const [editingTimeSlotId, setEditingTimeSlotId] = useState<string | null>(null);
   const [editStartsAt, setEditStartsAt] = useState("");
   const [editEndsAt, setEditEndsAt] = useState("");
@@ -443,13 +444,19 @@ export function AdminTimeslotsPage() {
     onSuccess: (result) => {
       setBulkError(null);
       setEditSuccess(null);
-      setBulkSuccess(`Se crearon ${result.created_count} turnos y se omitieron ${result.skipped_count}.`);
+      setBulkSkippedReasons(result.skipped_reasons);
+      setBulkSuccess(
+        result.created_count > 0
+          ? `Se crearon ${result.created_count} turnos y se omitieron ${result.skipped_count}.`
+          : `No se creó ningún turno. Se omitieron ${result.skipped_count}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: ["admin-timeslots"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-timeslots-preview"] });
       void queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
     onError: (error) => {
       setBulkSuccess(null);
+      setBulkSkippedReasons([]);
       setBulkError(error instanceof Error ? error.message : "No pudimos crear los turnos.");
     },
   });
@@ -494,6 +501,7 @@ export function AdminTimeslotsPage() {
     event.preventDefault();
     setBulkError(null);
     setBulkSuccess(null);
+    setBulkSkippedReasons([]);
 
     if (!bulkCourtIds.length) {
       setBulkError("Seleccioná al menos una cancha.");
@@ -972,8 +980,24 @@ export function AdminTimeslotsPage() {
             ) : null}
 
             {bulkSuccess ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {bulkSuccess}
+              <div
+                className={`rounded-2xl border px-4 py-3 text-sm ${
+                  bulkSuccess.startsWith("No se creó")
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                }`}
+              >
+                <p>{bulkSuccess}</p>
+                {bulkSkippedReasons.length ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                    {bulkSkippedReasons.slice(0, 6).map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                    {bulkSkippedReasons.length > 6 ? (
+                      <li>Y {bulkSkippedReasons.length - 6} omisiones más.</li>
+                    ) : null}
+                  </ul>
+                ) : null}
               </div>
             ) : null}
 

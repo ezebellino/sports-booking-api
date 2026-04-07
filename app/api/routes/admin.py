@@ -517,11 +517,17 @@ def bulk_create_timeslots(
         actor_user_id=current_admin.id,
         action="timeslots.bulk_created",
         target_type="timeslot",
-        summary=f"Generó {len(created_slots)} turnos masivos en {len(courts)} canchas.",
+        summary=(
+            f"Generó {len(created_slots)} turnos masivos y omitió {len(skipped_reasons)} "
+            f"en {len(courts)} canchas."
+            if created_slots or skipped_reasons
+            else f"No generó turnos masivos en {len(courts)} canchas."
+        ),
         details={
             "created_count": len(created_slots),
             "skipped_count": len(skipped_reasons),
             "court_ids": [str(court.id) for court in courts],
+            "skipped_reasons": skipped_reasons[:10],
         },
     )
     db.commit()
