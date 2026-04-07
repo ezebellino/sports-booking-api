@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps.auth import get_request_organization, require_manage_timeslots
+from app.api.deps.auth import get_active_organization_id, get_request_organization, require_manage_timeslots
 from app.core.admin_audit import record_admin_audit_event
 from app.core.booking_policy import policy_source_message, resolve_policy_for_timeslot
 from app.db.session import get_db
@@ -79,10 +79,11 @@ def create_timeslot(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_timeslots),
 ):
+    active_organization_id = get_active_organization_id(current_admin)
     court = db.execute(
         select(Court)
         .options(joinedload(Court.sport))
-        .where(Court.id == payload.court_id, Court.organization_id == current_admin.organization_id)
+        .where(Court.id == payload.court_id, Court.organization_id == active_organization_id)
     ).scalar_one_or_none()
     if not court:
         raise HTTPException(status_code=400, detail=COURT_NOT_FOUND_DETAIL)
@@ -90,7 +91,7 @@ def create_timeslot(
         raise HTTPException(status_code=409, detail=INACTIVE_COURT_TIMESLOT_DETAIL)
 
     timeslot = TimeSlot(
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         court_id=payload.court_id,
         starts_at=payload.starts_at,
         ends_at=payload.ends_at,
@@ -102,7 +103,7 @@ def create_timeslot(
     db.flush()
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="timeslot.created",
         target_type="timeslot",
@@ -164,11 +165,12 @@ def update_timeslot(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_timeslots),
 ):
+    active_organization_id = get_active_organization_id(current_admin)
     timeslot = db.execute(
         select(TimeSlot)
         .options(joinedload(TimeSlot.organization).joinedload(Organization.settings))
         .options(joinedload(TimeSlot.court).joinedload(Court.sport))
-        .where(TimeSlot.id == timeslot_id, TimeSlot.organization_id == current_admin.organization_id)
+        .where(TimeSlot.id == timeslot_id, TimeSlot.organization_id == active_organization_id)
     ).scalar_one_or_none()
     if not timeslot:
         raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
@@ -187,7 +189,7 @@ def update_timeslot(
 
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="timeslot.updated",
         target_type="timeslot",
@@ -206,13 +208,14 @@ def delete_timeslot(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_timeslots),
 ):
-    timeslot = db.query(TimeSlot).filter(TimeSlot.id == timeslot_id, TimeSlot.organization_id == current_admin.organization_id).first()
+    active_organization_id = get_active_organization_id(current_admin)
+    timeslot = db.query(TimeSlot).filter(TimeSlot.id == timeslot_id, TimeSlot.organization_id == active_organization_id).first()
     if not timeslot:
         raise HTTPException(status_code=404, detail=TIMESLOT_NOT_FOUND_DETAIL)
 
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="timeslot.deleted",
         target_type="timeslot",

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import (
+    get_active_organization_id,
     get_request_organization,
     require_manage_inventory,
     require_manage_organization,
@@ -212,7 +213,7 @@ def get_current_organization(
     current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
     return organization
@@ -225,7 +226,7 @@ def update_current_organization(
     current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
 
@@ -271,7 +272,7 @@ def get_current_organization_settings(
     current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
     settings = get_or_create_organization_settings(db, organization)
@@ -284,7 +285,7 @@ def list_current_organization_sports(
     current_admin: User = Depends(require_manage_inventory),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
 
@@ -299,7 +300,7 @@ def update_current_organization_sports(
     current_admin: User = Depends(require_manage_organization),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
 
@@ -335,7 +336,7 @@ def list_current_organization_venues(
     current_admin: User = Depends(require_manage_inventory),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
 
@@ -353,7 +354,7 @@ def list_current_organization_courts(
     current_admin: User = Depends(require_manage_inventory),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
 
@@ -372,7 +373,7 @@ def update_current_organization_settings(
     current_admin: User = Depends(require_manage_whatsapp),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
     settings = get_or_create_organization_settings(db, organization)
@@ -412,7 +413,7 @@ async def upload_current_organization_logo(
     current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, get_active_organization_id(current_admin))
     if not organization:
         raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_DETAIL)
 
@@ -442,11 +443,12 @@ def list_staff_invitations(
     current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
+    active_organization_id = get_active_organization_id(current_admin)
     now = datetime.now(timezone.utc)
     invitations = (
         db.query(StaffInvitation)
         .filter(
-            StaffInvitation.organization_id == current_admin.organization_id,
+            StaffInvitation.organization_id == active_organization_id,
             StaffInvitation.status == "pending",
             StaffInvitation.expires_at > now,
         )
@@ -463,13 +465,14 @@ def create_staff_invitation(
     current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
+    active_organization_id = get_active_organization_id(current_admin)
     existing_user = db.query(User).filter(User.email == payload.email).first()
     if existing_user:
         existing_membership = (
             db.query(OrganizationMembership)
             .filter(
                 OrganizationMembership.user_id == existing_user.id,
-                OrganizationMembership.organization_id == current_admin.organization_id,
+                OrganizationMembership.organization_id == active_organization_id,
             )
             .first()
         )
@@ -477,7 +480,7 @@ def create_staff_invitation(
             raise HTTPException(status_code=409, detail=USER_ALREADY_MEMBER_DETAIL)
 
     invitation = StaffInvitation(
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         invited_by_user_id=current_admin.id,
         email=payload.email,
         full_name=payload.full_name,
@@ -490,7 +493,7 @@ def create_staff_invitation(
     db.flush()
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="staff.invitation.created",
         target_type="staff_invitation",
@@ -500,7 +503,7 @@ def create_staff_invitation(
     )
     db.commit()
     db.refresh(invitation)
-    organization = db.get(Organization, current_admin.organization_id)
+    organization = db.get(Organization, active_organization_id)
     delivery_status, delivery_detail = send_staff_invitation_email(
         recipient_email=invitation.email,
         recipient_name=invitation.full_name,
@@ -532,11 +535,12 @@ def cancel_staff_invitation(
     current_admin: User = Depends(require_manage_staff),
 ):
     current_admin = ensure_user_organization(db, current_admin)
+    active_organization_id = get_active_organization_id(current_admin)
     invitation = (
         db.query(StaffInvitation)
         .filter(
             StaffInvitation.id == invitation_id,
-            StaffInvitation.organization_id == current_admin.organization_id,
+            StaffInvitation.organization_id == active_organization_id,
         )
         .first()
     )
@@ -548,7 +552,7 @@ def cancel_staff_invitation(
     invitation.status = "cancelled"
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="staff.invitation.cancelled",
         target_type="staff_invitation",

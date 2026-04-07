@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps.auth import (
+    get_active_organization_id,
     require_manage_organization,
     require_manage_staff,
     require_manage_timeslots,
@@ -54,10 +55,11 @@ def list_admin_audit_events(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_organization),
 ):
+    active_organization_id = get_active_organization_id(current_admin)
     events = (
         db.query(AdminAuditEvent)
         .options(joinedload(AdminAuditEvent.actor_user))
-        .filter(AdminAuditEvent.organization_id == current_admin.organization_id)
+        .filter(AdminAuditEvent.organization_id == active_organization_id)
         .order_by(AdminAuditEvent.created_at.desc())
         .limit(limit)
         .all()
@@ -82,7 +84,8 @@ def get_admin_readiness(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_organization),
 ):
-    organization = db.get(Organization, current_admin.organization_id)
+    active_organization_id = get_active_organization_id(current_admin)
+    organization = db.get(Organization, active_organization_id)
     settings = get_or_create_organization_settings(db, organization) if organization else None
     whatsapp_status = notification_status_payload(settings)
     now = datetime.now(timezone.utc)
@@ -91,7 +94,7 @@ def get_admin_readiness(
         db.execute(
             select(func.count(OrganizationSport.sport_id))
             .where(
-                OrganizationSport.organization_id == current_admin.organization_id,
+                OrganizationSport.organization_id == active_organization_id,
                 OrganizationSport.is_enabled.is_(True),
             )
         ).scalar_one()
@@ -99,18 +102,18 @@ def get_admin_readiness(
 
     venues_count = int(
         db.execute(
-            select(func.count(Venue.id)).where(Venue.organization_id == current_admin.organization_id)
+            select(func.count(Venue.id)).where(Venue.organization_id == active_organization_id)
         ).scalar_one()
     )
     courts_count = int(
         db.execute(
-            select(func.count(Court.id)).where(Court.organization_id == current_admin.organization_id)
+            select(func.count(Court.id)).where(Court.organization_id == active_organization_id)
         ).scalar_one()
     )
     upcoming_timeslots_count = int(
         db.execute(
             select(func.count(TimeSlot.id)).where(
-                TimeSlot.organization_id == current_admin.organization_id,
+                TimeSlot.organization_id == active_organization_id,
                 TimeSlot.is_active.is_(True),
                 TimeSlot.starts_at > now,
             )
@@ -185,9 +188,10 @@ def get_admin_readiness(
 @router.get("/users", response_model=list[UserPublic])
 def list_users(db: Session = Depends(get_db), _: User = Depends(require_manage_staff)):
     current_admin = _
+    active_organization_id = get_active_organization_id(current_admin)
     users = (
         db.query(User)
-        .filter(User.organization_id == current_admin.organization_id)
+        .filter(User.organization_id == active_organization_id)
         .order_by(User.created_at.desc())
         .all()
     )
@@ -357,12 +361,13 @@ def get_admin_metrics(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_view_metrics),
 ):
+    active_organization_id = get_active_organization_id(current_admin)
     stmt = select(TimeSlot).options(
         joinedload(TimeSlot.court).joinedload(Court.sport),
         joinedload(TimeSlot.court).joinedload(Court.venue),
         joinedload(TimeSlot.bookings),
     )
-    stmt = stmt.where(TimeSlot.organization_id == current_admin.organization_id)
+    stmt = stmt.where(TimeSlot.organization_id == active_organization_id)
 
     if date_from is not None:
         stmt = stmt.where(TimeSlot.starts_at >= date_from)
@@ -443,9 +448,10 @@ def bulk_create_timeslots(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_timeslots),
 ):
+    active_organization_id = get_active_organization_id(current_admin)
     courts = (
         db.query(Court)
-        .filter(Court.id.in_(payload.court_ids), Court.organization_id == current_admin.organization_id)
+        .filter(Court.id.in_(payload.court_ids), Court.organization_id == active_organization_id)
         .all()
     )
     found_court_ids = {court.id for court in courts}
@@ -488,7 +494,7 @@ def bulk_create_timeslots(
                 )
             else:
                 timeslot = TimeSlot(
-                    organization_id=current_admin.organization_id,
+                    organization_id=active_organization_id,
                     court_id=court.id,
                     starts_at=current_start,
                     ends_at=current_end,
@@ -507,7 +513,7 @@ def bulk_create_timeslots(
 
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="timeslots.bulk_created",
         target_type="timeslot",

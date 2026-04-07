@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import get_request_organization, require_manage_inventory
+from app.api.deps.auth import get_active_organization_id, get_request_organization, require_manage_inventory
 from app.core.admin_audit import record_admin_audit_event
 from app.db.session import get_db
 from app.models.organization import Organization
@@ -48,19 +48,20 @@ def create_venue(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_inventory),
 ):
+    active_organization_id = get_active_organization_id(current_admin)
     if payload.allowed_sport_id and not db.get(Sport, payload.allowed_sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
     if payload.allowed_sport_id:
         enabled = ensure_enabled_organization_sport(
             db,
-            current_admin.organization_id,
+            active_organization_id,
             payload.allowed_sport_id,
         )
         if not enabled:
             raise HTTPException(status_code=400, detail=SPORT_NOT_ENABLED_DETAIL)
 
     venue = Venue(
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         name=payload.name,
         address=payload.address,
         timezone=payload.timezone,
@@ -70,7 +71,7 @@ def create_venue(
     db.flush()
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="venue.created",
         target_type="venue",
@@ -104,7 +105,8 @@ def update_venue(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_inventory),
 ):
-    venue = db.query(Venue).filter(Venue.id == venue_id, Venue.organization_id == current_admin.organization_id).first()
+    active_organization_id = get_active_organization_id(current_admin)
+    venue = db.query(Venue).filter(Venue.id == venue_id, Venue.organization_id == active_organization_id).first()
     if not venue:
         raise HTTPException(status_code=404, detail=VENUE_NOT_FOUND_DETAIL)
 
@@ -113,7 +115,7 @@ def update_venue(
     if payload.allowed_sport_id is not None and payload.allowed_sport_id:
         enabled = ensure_enabled_organization_sport(
             db,
-            current_admin.organization_id,
+            active_organization_id,
             payload.allowed_sport_id,
         )
         if not enabled:
@@ -130,7 +132,7 @@ def update_venue(
 
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="venue.updated",
         target_type="venue",
@@ -149,7 +151,8 @@ def delete_venue(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_inventory),
 ):
-    venue = db.query(Venue).filter(Venue.id == venue_id, Venue.organization_id == current_admin.organization_id).first()
+    active_organization_id = get_active_organization_id(current_admin)
+    venue = db.query(Venue).filter(Venue.id == venue_id, Venue.organization_id == active_organization_id).first()
     if not venue:
         raise HTTPException(status_code=404, detail=VENUE_NOT_FOUND_DETAIL)
     if venue.courts:
@@ -157,7 +160,7 @@ def delete_venue(
 
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="venue.deleted",
         target_type="venue",

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import get_request_organization, require_manage_inventory
+from app.api.deps.auth import get_active_organization_id, get_request_organization, require_manage_inventory
 from app.core.admin_audit import record_admin_audit_event
 from app.db.session import get_db
 from app.models.booking import Booking
@@ -56,14 +56,15 @@ def create_court(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_inventory),
 ):
-    venue = db.query(Venue).filter(Venue.id == payload.venue_id, Venue.organization_id == current_admin.organization_id).first()
+    active_organization_id = get_active_organization_id(current_admin)
+    venue = db.query(Venue).filter(Venue.id == payload.venue_id, Venue.organization_id == active_organization_id).first()
     if not venue:
         raise HTTPException(status_code=400, detail=VENUE_NOT_FOUND_DETAIL)
     if not db.get(Sport, payload.sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
     enabled = ensure_enabled_organization_sport(
         db,
-        current_admin.organization_id,
+        active_organization_id,
         payload.sport_id,
     )
     if not enabled:
@@ -72,7 +73,7 @@ def create_court(
         raise HTTPException(status_code=400, detail=VENUE_SPORT_MISMATCH_DETAIL)
 
     court = Court(
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         venue_id=payload.venue_id,
         sport_id=payload.sport_id,
         name=payload.name,
@@ -83,7 +84,7 @@ def create_court(
     db.flush()
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="court.created",
         target_type="court",
@@ -120,21 +121,22 @@ def update_court(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_manage_inventory),
 ):
-    court = db.query(Court).filter(Court.id == court_id, Court.organization_id == current_admin.organization_id).first()
+    active_organization_id = get_active_organization_id(current_admin)
+    court = db.query(Court).filter(Court.id == court_id, Court.organization_id == active_organization_id).first()
     if not court:
         raise HTTPException(status_code=404, detail=COURT_NOT_FOUND_DETAIL)
 
     next_venue_id = payload.venue_id or court.venue_id
     next_sport_id = payload.sport_id or court.sport_id
 
-    venue = db.query(Venue).filter(Venue.id == next_venue_id, Venue.organization_id == current_admin.organization_id).first()
+    venue = db.query(Venue).filter(Venue.id == next_venue_id, Venue.organization_id == active_organization_id).first()
     if not venue:
         raise HTTPException(status_code=400, detail=VENUE_NOT_FOUND_DETAIL)
     if not db.get(Sport, next_sport_id):
         raise HTTPException(status_code=400, detail=SPORT_NOT_FOUND_DETAIL)
     enabled = ensure_enabled_organization_sport(
         db,
-        current_admin.organization_id,
+        active_organization_id,
         next_sport_id,
     )
     if not enabled:
@@ -155,7 +157,7 @@ def update_court(
 
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="court.updated",
         target_type="court",
@@ -175,7 +177,8 @@ def delete_court(
     current_admin: User = Depends(require_manage_inventory),
 ):
     now = datetime.now(timezone.utc)
-    court = db.query(Court).filter(Court.id == court_id, Court.organization_id == current_admin.organization_id).first()
+    active_organization_id = get_active_organization_id(current_admin)
+    court = db.query(Court).filter(Court.id == court_id, Court.organization_id == active_organization_id).first()
     if not court:
         raise HTTPException(status_code=404, detail=COURT_NOT_FOUND_DETAIL)
 
@@ -198,7 +201,7 @@ def delete_court(
 
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="court.deleted",
         target_type="court",

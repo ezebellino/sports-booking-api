@@ -30,6 +30,24 @@ TIMESLOTS_ONLY_DETAIL = "Acceso exclusivo para turnos operativos"
 WHATSAPP_ONLY_DETAIL = "Acceso exclusivo para configuración de WhatsApp"
 
 
+def get_active_organization_id(current_user: User):
+    active_membership = getattr(current_user, "_active_membership", None)
+    if active_membership is not None:
+        return active_membership.organization_id
+    return current_user.organization_id
+
+
+def get_active_organization(current_user: User, db: Session) -> Organization | None:
+    active_membership = getattr(current_user, "_active_membership", None)
+    if active_membership is not None and active_membership.organization is not None:
+        return active_membership.organization
+
+    organization_id = get_active_organization_id(current_user)
+    if organization_id:
+        return db.get(Organization, organization_id)
+    return None
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     try:
         payload = decode_token(token)
@@ -76,10 +94,9 @@ def get_optional_current_user(token: str | None = Depends(oauth2_optional), db: 
 
 
 def get_current_organization(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Organization:
-    if current_user.organization_id:
-        organization = db.get(Organization, current_user.organization_id)
-        if organization:
-            return organization
+    organization = get_active_organization(current_user, db)
+    if organization:
+        return organization
     return get_default_organization(db)
 
 
@@ -88,8 +105,8 @@ def get_request_organization(
     request: Request = None,
     db: Session = Depends(get_db),
 ) -> Organization:
-    if current_user and current_user.organization_id:
-        organization = db.get(Organization, current_user.organization_id)
+    if current_user:
+        organization = get_active_organization(current_user, db)
         if organization:
             return organization
 

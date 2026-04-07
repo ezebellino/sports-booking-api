@@ -1,6 +1,7 @@
 ﻿from datetime import datetime, timedelta, timezone
 
 from app.core.holidays import HolidayProviderError, HolidayRecord
+from app.core.organization_memberships import ensure_membership
 from app.models.admin_audit_event import AdminAuditEvent
 from app.core.security import get_password_hash
 from app.models.booking import Booking
@@ -2664,6 +2665,193 @@ def test_switch_organization_changes_active_membership_context(client, db_sessio
     assert payload["organization_slug"] == "tenant-switch-b"
     assert payload["role"] == "admin"
     assert any(item["organization_slug"] == "tenant-switch-b" and item["is_active"] for item in payload["memberships"])
+
+
+def test_switched_admin_can_create_timeslots_in_active_organization(client, db_session):
+    sport = Sport(name="Tenis switch", description="Cambio de tenant")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    owner_a = onboard_organization(
+        client,
+        organization_name="Complejo Switch A",
+        organization_slug="complejo-switch-a",
+        admin_email="owner-switch-a@saas.com",
+    )
+    owner_b = onboard_organization(
+        client,
+        organization_name="Complejo Switch B",
+        organization_slug="complejo-switch-b",
+        admin_email="owner-switch-b@saas.com",
+    )
+
+    first_org_id = owner_a["organization"]["id"]
+    second_org_id = owner_b["organization"]["id"]
+    owner_user = db_session.query(User).filter(User.email == "owner-switch-a@saas.com").first()
+    second_org = db_session.get(Organization, second_org_id)
+    ensure_membership(
+        db_session,
+        user=owner_user,
+        organization=second_org,
+        role="admin",
+        make_default=False,
+    )
+    db_session.commit()
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Switch B",
+            "address": "Calle B 123",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(owner_b["access_token"]),
+    )
+    assert venue_response.status_code == 201
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": venue_response.json()["id"],
+            "sport_id": str(sport.id),
+            "name": "Cancha Switch B",
+            "indoor": False,
+            "is_active": True,
+        },
+        headers=auth_headers(owner_b["access_token"]),
+    )
+    assert court_response.status_code == 201
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "owner-switch-a@saas.com", "password": "password123"},
+    )
+    assert login_response.status_code == 200
+    switch_response = client.post(
+        "/auth/switch-organization",
+        json={"organization_id": second_org_id},
+        headers=auth_headers(login_response.json()["access_token"]),
+    )
+    assert switch_response.status_code == 200
+
+    create_response = client.post(
+        "/timeslots",
+        json={
+            "court_id": court_response.json()["id"],
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
+            "ends_at": (datetime.now(timezone.utc) + timedelta(days=3, hours=1)).isoformat(),
+            "capacity": 4,
+            "price": 18000,
+            "is_active": True,
+        },
+        headers=auth_headers(switch_response.json()["access_token"]),
+    )
+    assert create_response.status_code == 201
+    assert create_response.json()["court_id"] == court_response.json()["id"]
+
+    first_org_timeslots = db_session.query(TimeSlot).filter(TimeSlot.organization_id == first_org_id).all()
+    second_org_timeslots = db_session.query(TimeSlot).filter(TimeSlot.organization_id == second_org_id).all()
+    assert len(first_org_timeslots) == 0
+    assert len(second_org_timeslots) == 1
+
+
+def test_switched_admin_bulk_create_timeslots_in_active_organization(client, db_session):
+    sport = Sport(name="Padel switch bulk", description="Cambio bulk")
+    db_session.add(sport)
+    db_session.commit()
+    db_session.refresh(sport)
+
+    owner_a = onboard_organization(
+        client,
+        organization_name="Complejo Bulk A",
+        organization_slug="complejo-bulk-a",
+        admin_email="owner-bulk-a@saas.com",
+    )
+    owner_b = onboard_organization(
+        client,
+        organization_name="Complejo Bulk B",
+        organization_slug="complejo-bulk-b",
+        admin_email="owner-bulk-b@saas.com",
+    )
+
+    owner_user = db_session.query(User).filter(User.email == "owner-bulk-a@saas.com").first()
+    second_org = db_session.get(Organization, owner_b["organization"]["id"])
+    ensure_membership(
+        db_session,
+        user=owner_user,
+        organization=second_org,
+        role="admin",
+        make_default=False,
+    )
+    db_session.commit()
+
+    venue_response = client.post(
+        "/venues",
+        json={
+            "name": "Sede Bulk B",
+            "address": "Calle Bulk 456",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "allowed_sport_id": str(sport.id),
+        },
+        headers=auth_headers(owner_b["access_token"]),
+    )
+    assert venue_response.status_code == 201
+
+    court_response = client.post(
+        "/courts",
+        json={
+            "venue_id": venue_response.json()["id"],
+            "sport_id": str(sport.id),
+            "name": "Cancha Bulk B",
+            "indoor": True,
+            "is_active": True,
+        },
+        headers=auth_headers(owner_b["access_token"]),
+    )
+    assert court_response.status_code == 201
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "owner-bulk-a@saas.com", "password": "password123"},
+    )
+    assert login_response.status_code == 200
+    switch_response = client.post(
+        "/auth/switch-organization",
+        json={"organization_id": owner_b["organization"]["id"]},
+        headers=auth_headers(login_response.json()["access_token"]),
+    )
+    assert switch_response.status_code == 200
+
+    base_day = datetime.now(timezone.utc).replace(hour=18, minute=0, second=0, microsecond=0) + timedelta(days=4)
+    bulk_response = client.post(
+        "/admin/timeslots/bulk",
+        json={
+            "court_ids": [court_response.json()["id"]],
+            "window_starts_at": base_day.isoformat(),
+            "window_ends_at": (base_day + timedelta(hours=2)).isoformat(),
+            "slot_minutes": 60,
+            "capacity": 4,
+            "price": 18000,
+            "is_active": True,
+        },
+        headers=auth_headers(switch_response.json()["access_token"]),
+    )
+    assert bulk_response.status_code == 201
+    assert bulk_response.json()["created_count"] == 2
+
+    current_timeslots_response = client.get(
+        "/timeslots",
+        params={
+            "court_id": court_response.json()["id"],
+            "date_from": base_day.isoformat(),
+            "date_to": (base_day + timedelta(days=1)).isoformat(),
+        },
+        headers=auth_headers(switch_response.json()["access_token"]),
+    )
+    assert current_timeslots_response.status_code == 200
+    assert len(current_timeslots_response.json()) == 2
 
 
 def test_inactive_organization_blocks_public_context_and_registration(client):

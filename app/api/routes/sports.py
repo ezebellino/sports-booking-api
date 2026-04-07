@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import get_request_organization, require_admin
+from app.api.deps.auth import get_active_organization_id, get_request_organization, require_admin
 from app.core.admin_audit import record_admin_audit_event
 from app.db.session import get_db
 from app.models.organization import Organization
@@ -25,6 +25,7 @@ def create_sport(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_admin),
 ):
+    active_organization_id = get_active_organization_id(current_admin)
     exist = db.query(Sport).filter(Sport.name.ilike(payload.name)).first()
     if exist:
         raise HTTPException(status_code=400, detail=SPORT_NAME_EXISTS_DETAIL)
@@ -42,12 +43,12 @@ def create_sport(
             OrganizationSport(
                 organization_id=organization.id,
                 sport_id=sport.id,
-                is_enabled=organization.id == current_admin.organization_id,
+                is_enabled=organization.id == active_organization_id,
             )
         )
     record_admin_audit_event(
         db,
-        organization_id=current_admin.organization_id,
+        organization_id=active_organization_id,
         actor_user_id=current_admin.id,
         action="sport.created",
         target_type="sport",
