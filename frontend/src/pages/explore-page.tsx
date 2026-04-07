@@ -92,6 +92,9 @@ export function ExplorePage() {
         auth: isAuthenticated,
       }),
     enabled: Boolean(selectedCourtId),
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 
   const venuesById = useMemo(
@@ -121,6 +124,30 @@ export function ExplorePage() {
   useEffect(() => {
     setFeedback(null);
   }, [selectedSportId, selectedVenueId, selectedCourtId, selectedDate]);
+
+  useEffect(() => {
+    if (!selectedCourtId) {
+      return;
+    }
+
+    function handleVisibilityRefresh() {
+      if (document.visibilityState === "visible") {
+        void timeslotsQuery.refetch();
+      }
+    }
+
+    function handleFocusRefresh() {
+      void timeslotsQuery.refetch();
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+    window.addEventListener("focus", handleFocusRefresh);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+      window.removeEventListener("focus", handleFocusRefresh);
+    };
+  }, [selectedCourtId, timeslotsQuery]);
 
   const bookingMutation = useMutation({
     mutationFn: api.createBooking,
@@ -368,10 +395,15 @@ export function ExplorePage() {
                   title="Todavía no elegiste una cancha"
                   description="Apenas selecciones una cancha vamos a consultar los turnos disponibles para la fecha elegida."
                 />
-              ) : timeslotsQuery.isLoading ? (
+              ) : timeslotsQuery.isLoading || (timeslotsQuery.isFetching && !timeslotsQuery.data?.length) ? (
                 <LoadingCard label="Buscando turnos..." />
               ) : visibleTimeslots.length ? (
                 <div className="mt-4 space-y-3">
+                  {timeslotsQuery.isFetching ? (
+                    <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                      Actualizando turnos disponibles...
+                    </div>
+                  ) : null}
                   {visibleTimeslots.map((slot) => {
                     const court = courtsById.get(slot.court_id);
                     const sport = court ? sportsById.get(court.sport_id) : null;
