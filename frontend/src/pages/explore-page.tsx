@@ -110,7 +110,10 @@ export function ExplorePage() {
   const selectedVenue = selectedVenueId ? venuesById.get(selectedVenueId) ?? null : null;
   const selectedCourt = selectedCourtId ? courtsById.get(selectedCourtId) ?? null : null;
   const visibleTimeslots = useMemo(
-    () => (timeslotsQuery.data ?? []).filter((slot) => slot.availability_status !== "expired"),
+    () =>
+      (timeslotsQuery.data ?? []).filter(
+        (slot) => slot.availability_status !== "expired" && slot.availability_status !== "booking_closed",
+      ),
     [timeslotsQuery.data],
   );
 
@@ -434,7 +437,7 @@ export function ExplorePage() {
               ) : (
                 <EmptyState
                   title="Sin turnos disponibles para esa fecha"
-                  description="Los turnos vencidos ya no se muestran en esta búsqueda. Probá con otra fecha o cargá más turnos desde el panel admin."
+                  description="Los turnos vencidos o fuera de ventana ya no se muestran en esta búsqueda. Probá con otra fecha o cargá más turnos desde el panel admin."
                 />
               )}
             </section>
