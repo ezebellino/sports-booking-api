@@ -16,6 +16,7 @@ import { EmptyState } from "../components/empty-state";
 import { LoadingCard } from "../components/loading-card";
 import { SectionTitle } from "../components/section-title";
 import { api, type TimeSlot } from "../lib/api";
+import { confirmAction } from "../lib/dialog";
 import {
   dateInputDefault,
   dateLabel,
@@ -30,8 +31,22 @@ function toLocalDateTimeInput(iso: string) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-function combineDateTime(date: string, time: string) {
-  return new Date(`${date}T${time}`).toISOString();
+function getWindowDateTimes(dateValue: string, startTime: string, endTime: string) {
+  const start = new Date(`${dateValue}T${startTime}`);
+  const end = new Date(`${dateValue}T${endTime}`);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+
+  if (end <= start) {
+    end.setDate(end.getDate() + 1);
+  }
+
+  return {
+    start,
+    end,
+  };
 }
 
 const weekdayOptions = [
@@ -258,12 +273,13 @@ export function AdminTimeslotsPage() {
     const slots: Array<{ startsAt: string; endsAt: string }> = [];
 
     for (const dateValue of scheduleDates) {
-      const start = new Date(`${dateValue}T${windowStart}`);
-      const endLimit = new Date(`${dateValue}T${windowEnd}`);
+      const windowDateTimes = getWindowDateTimes(dateValue, windowStart, windowEnd);
 
-      if (Number.isNaN(start.getTime()) || Number.isNaN(endLimit.getTime()) || start >= endLimit) {
+      if (!windowDateTimes) {
         continue;
       }
+
+      const { start, end: endLimit } = windowDateTimes;
 
       let currentStart = new Date(start);
       while (currentStart < endLimit) {
@@ -398,10 +414,14 @@ export function AdminTimeslotsPage() {
       const skippedReasons: string[] = [];
 
       for (const dateValue of dates) {
+        const windowDateTimes = getWindowDateTimes(dateValue, windowStart, windowEnd);
+        if (!windowDateTimes) {
+          continue;
+        }
         const result = await api.bulkCreateTimeslots({
           court_ids: input.court_ids,
-          window_starts_at: combineDateTime(dateValue, windowStart),
-          window_ends_at: combineDateTime(dateValue, windowEnd),
+          window_starts_at: windowDateTimes.start.toISOString(),
+          window_ends_at: windowDateTimes.end.toISOString(),
           slot_minutes: input.slot_minutes,
           capacity: input.capacity,
           price: input.price,
@@ -470,7 +490,7 @@ export function AdminTimeslotsPage() {
     );
   }
 
-  function handleBulkSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleBulkSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBulkError(null);
     setBulkSuccess(null);
@@ -497,6 +517,7 @@ export function AdminTimeslotsPage() {
       scheduleMode === "monthly"
         ? buildMonthlyScheduleDates(scheduleMonth, monthlyWeekdays, excludedHolidayDates)
         : [];
+    const dailyWindowDateTimes = getWindowDateTimes(selectedDate, windowStart, windowEnd);
 
     if (scheduleMode === "monthly" && !monthlyWeekdays.length) {
       setBulkError("Seleccioná al menos un día de la semana para armar la grilla mensual.");
@@ -508,11 +529,28 @@ export function AdminTimeslotsPage() {
       return;
     }
 
+    if (scheduleMode === "daily" && !dailyWindowDateTimes) {
+      setBulkError("No pudimos interpretar el rango horario seleccionado.");
+      return;
+    }
+
+    if (previewSummary.crossesMidnight) {
+      const confirmed = await confirmAction({
+        title: "El bloque termina al día siguiente",
+        text: "Este rango horario cruza medianoche y va a crear turnos en dos fechas consecutivas. Confirmá si querés generarlo igual.",
+        confirmText: "Crear igual",
+        icon: "warning",
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+
     bulkCreateMutation.mutate({
       mode: scheduleMode,
       court_ids: bulkCourtIds,
-      window_starts_at: combineDateTime(selectedDate, windowStart),
-      window_ends_at: combineDateTime(selectedDate, windowEnd),
+      window_starts_at: dailyWindowDateTimes?.start.toISOString() ?? "",
+      window_ends_at: dailyWindowDateTimes?.end.toISOString() ?? "",
       slot_minutes: parsedSlotMinutes,
       capacity: parsedCapacity,
       price: price ? Number(price) : null,

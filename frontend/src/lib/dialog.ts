@@ -33,6 +33,26 @@ export async function confirmDestructiveAction(input: {
   return result.isConfirmed;
 }
 
+export async function confirmAction(input: {
+  title: string;
+  text: string;
+  confirmText: string;
+  icon?: "warning" | "question" | "info";
+}) {
+  const result = await baseDialog.fire({
+    icon: input.icon ?? "question",
+    title: input.title,
+    text: input.text,
+    showCancelButton: true,
+    confirmButtonText: input.confirmText,
+    cancelButtonText: "Cancelar",
+    reverseButtons: true,
+    focusCancel: true,
+  });
+
+  return result.isConfirmed;
+}
+
 export async function showTimedSuccess(input: { title: string; text: string; timer?: number }) {
   await baseDialog.fire({
     icon: "success",

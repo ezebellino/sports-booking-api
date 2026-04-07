@@ -29,7 +29,7 @@ import { useAuth } from "../modules/auth/auth-context";
 
 export function ExplorePage() {
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const tenantSlug = useTenantSlug();
   const tenantPath = useTenantPath();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,19 +41,45 @@ export function ExplorePage() {
   const selectedVenueId = searchParams.get("venue");
   const selectedCourtId = searchParams.get("court");
 
-  const sportsQuery = useQuery({ queryKey: ["sports", tenantSlug ?? "default"], queryFn: api.listSports });
+  const sportsQuery = useQuery({
+    queryKey: ["explore-sports", isAuthenticated ? user?.organization_id ?? "auth" : tenantSlug ?? "default"],
+    queryFn: () =>
+      isAuthenticated
+        ? api.listCurrentOrganizationSports().then((sports) =>
+            sports.filter((sport) => sport.is_enabled).map((sport) => sport.sport),
+          )
+        : api.listSports(),
+  });
   const policiesQuery = useQuery({
     queryKey: ["booking-policies", tenantSlug ?? "default", selectedSportId],
     queryFn: () => api.listBookingPolicies(selectedSportId),
   });
   const venuesQuery = useQuery({
-    queryKey: ["venues", tenantSlug ?? "default", selectedSportId],
-    queryFn: () => api.listVenues(selectedSportId),
+    queryKey: ["explore-venues", isAuthenticated ? user?.organization_id ?? "auth" : tenantSlug ?? "default", selectedSportId],
+    queryFn: async () => {
+      const venues = isAuthenticated ? await api.listCurrentOrganizationVenues() : await api.listVenues(selectedSportId);
+      return selectedSportId
+        ? venues.filter((venue) => !venue.allowed_sport_id || venue.allowed_sport_id === selectedSportId)
+        : venues;
+    },
     enabled: Boolean(sportsQuery.data),
   });
   const courtsQuery = useQuery({
-    queryKey: ["courts", tenantSlug ?? "default", selectedVenueId, selectedSportId],
-    queryFn: () => api.listCourts({ venueId: selectedVenueId, sportId: selectedSportId }),
+    queryKey: ["explore-courts", isAuthenticated ? user?.organization_id ?? "auth" : tenantSlug ?? "default", selectedVenueId, selectedSportId],
+    queryFn: async () => {
+      const courts = isAuthenticated
+        ? await api.listCurrentOrganizationCourts()
+        : await api.listCourts({ venueId: selectedVenueId, sportId: selectedSportId });
+      return courts.filter((court) => {
+        if (selectedVenueId && court.venue_id !== selectedVenueId) {
+          return false;
+        }
+        if (selectedSportId && court.sport_id !== selectedSportId) {
+          return false;
+        }
+        return true;
+      });
+    },
     enabled: Boolean(selectedVenueId || selectedSportId),
   });
   const timeslotsQuery = useQuery({
