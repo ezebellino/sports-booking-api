@@ -52,6 +52,15 @@ export function timeZoneSummary(timeZone?: string | null) {
   return `${timeZone} · ${timeZoneLabel(timeZone)}`;
 }
 
+export function dateKeyInTimeZone(iso: string, timeZone?: string | null) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timeZone ?? undefined,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
 export function dateInputDefault() {
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60_000;

@@ -18,6 +18,7 @@ import { SectionTitle } from "../components/section-title";
 import { api, type TimeSlot } from "../lib/api";
 import { confirmAction } from "../lib/dialog";
 import {
+  dateKeyInTimeZone,
   dateInputDefault,
   dateLabel,
   localDateBounds,
@@ -297,6 +298,24 @@ export function AdminTimeslotsPage() {
   }, [excludedHolidayDates, monthlyWeekdays, scheduleMode, scheduleMonth, selectedDate, slotMinutes, windowEnd, windowStart]);
 
   const previewSummary = useMemo(() => {
+    const previewSummaryTimeZone =
+      Array.from(
+        new Set(
+          bulkCourtIds
+            .map((courtId) => courtsById.get(courtId))
+            .map((court) => (court ? venuesById.get(court.venue_id)?.timezone ?? null : null))
+            .filter((timezone): timezone is string => Boolean(timezone)),
+        ),
+      ).length === 1
+        ? Array.from(
+            new Set(
+              bulkCourtIds
+                .map((courtId) => courtsById.get(courtId))
+                .map((court) => (court ? venuesById.get(court.venue_id)?.timezone ?? null : null))
+                .filter((timezone): timezone is string => Boolean(timezone)),
+            ),
+          )[0]
+        : null;
     const selectedCourtSet = new Set(bulkCourtIds);
     const existingKeys = new Set(
       (existingDayTimeslotsQuery.data ?? [])
@@ -329,9 +348,13 @@ export function AdminTimeslotsPage() {
     const totalCreateCount = rows.reduce((sum, row) => sum + row.createCount, 0);
     const totalSkippedCount = rows.reduce((sum, row) => sum + row.skippedCount, 0);
     const crossesMidnight = rows.some(
-      (row) => new Date(row.endsAt).toISOString().slice(0, 10) !== new Date(row.startsAt).toISOString().slice(0, 10),
+      (row) =>
+        dateKeyInTimeZone(row.endsAt, previewSummaryTimeZone) !==
+        dateKeyInTimeZone(row.startsAt, previewSummaryTimeZone),
     );
-    const uniqueDates = Array.from(new Set(rows.map((row) => new Date(row.startsAt).toISOString().slice(0, 10))));
+    const uniqueDates = Array.from(
+      new Set(rows.map((row) => dateKeyInTimeZone(row.startsAt, previewSummaryTimeZone))),
+    );
 
     return {
       rows,
@@ -340,7 +363,7 @@ export function AdminTimeslotsPage() {
       crossesMidnight,
       uniqueDates,
     };
-  }, [bulkCourtIds, courtsById, existingDayTimeslotsQuery.data, previewSlots]);
+  }, [bulkCourtIds, courtsById, existingDayTimeslotsQuery.data, previewSlots, venuesById]);
 
   const selectedVenue = filterVenueId ? venuesById.get(filterVenueId) ?? null : null;
 
