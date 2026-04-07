@@ -83,12 +83,13 @@ export function ExplorePage() {
     enabled: Boolean(selectedVenueId || selectedSportId),
   });
   const timeslotsQuery = useQuery({
-    queryKey: ["timeslots", tenantSlug ?? "default", selectedCourtId, selectedDate],
+    queryKey: ["timeslots", isAuthenticated ? user?.organization_id ?? "auth" : tenantSlug ?? "default", selectedCourtId, selectedDate],
     queryFn: () =>
       api.listTimeslots({
         courtId: selectedCourtId,
         dateFrom: dayBounds.startIso,
         dateTo: dayBounds.endIso,
+        auth: isAuthenticated,
       }),
     enabled: Boolean(selectedCourtId),
   });
